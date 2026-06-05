@@ -1,9 +1,11 @@
 import {protocol, app} from "electron";
+
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {spawn, exec} from "child_process";
 import {mainConsole} from "./main";
+import {ChildProcessWithoutNullStreams} from "node:child_process";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 const videoPath = VITE_DEV_SERVER_URL ? path.join(__dirname, "../ffmpeg/") : path.join(process.env.APP_ROOT, "ffmpeg/");
@@ -13,6 +15,56 @@ const ffprobePath = path.join(videoPath, "ffprobe.exe");
 
 const m3u8File = path.join(videoPath, "index.m3u8");
 const outFile = path.join(videoPath, "temp.mp4");
+const hlsPath = path.join(videoPath, "hls");
+const segmentCache = new Map();
+const inflight = new Map();
+const processMap = new Map();
+export const killProcess = () => {
+  processMap.forEach((item) => {
+    if (!item.killed) {
+      item.kill();
+    }
+  });
+};
+export const isSegVideo = (type: string) => {
+  return type === "mpegts";
+};
+class VideoManager {
+  filePath: string = "";
+  info: any;
+  frames: Array<[number, number]> = [];
+  m3u8Text: string = "";
+  type: string = "mp4";
+  setfilePath(filePath: string) {
+    this.filePath = filePath;
+    segmentCache.clear();
+    inflight.clear();
+  }
+  setM3u8Text(text: string) {
+    this.m3u8Text = text;
+    console.log("setM3u8Text", text.length);
+  }
+
+  setFrames(frames: Array<[number, number]>) {
+    this.frames = frames;
+  }
+  setInfo(info: any) {
+    this.info = info;
+    this.type = this.info.format.format_name;
+  }
+
+  getDuration() {
+    return Number(this.info.format.duration);
+  }
+  getFrame(index: number | string) {
+    const item = this.frames[Number(index)];
+    if (item) {
+      return item;
+    }
+  }
+}
+export const videoManager = new VideoManager();
+
 const getRange = async (filePath: string, rangeHeader: string | null) => {
   const {size} = await fs.promises.stat(filePath);
   let start = 0,
@@ -28,47 +80,51 @@ const getRange = async (filePath: string, rangeHeader: string | null) => {
 
   return {start, end, chunkSize, size};
 };
+const getVideoStream = async (req: Request, resolve: Function, reject: Function) => {
+  const filePath = videoManager.filePath;
+  const rangeHeader = req.headers.get("Range");
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "media", // 自定义协议名
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true
-    }
-  }
-]);
-
-const runCMDBuffer = (cmd: string, args: string[]) => {
-  return new Promise<Buffer>((resolve, reject) => {
-    const proc = spawn(cmd as string, args, {stdio: ["ignore", "pipe", "pipe"]});
-    const chunks: any[] = [];
-    proc.stdout.on("data", (d) => {
-      chunks.push(d);
-    });
-    proc.stdout.on("end", () => {
-      const buf = Buffer.concat(chunks);
-      resolve(buf);
-    });
-
-    proc.on("error", reject);
-    // proc.stderr.on("data", () => {});
+  const {start, end, chunkSize, size} = await getRange(filePath, rangeHeader);
+  closeStream();
+  videoStream = fs.createReadStream(filePath, {start, end});
+  videoStream.on("error", (error) => {
+    closeStream();
+    console.log("error", error);
   });
+
+  resolve(
+    new Response(videoStream as any, {
+      status: rangeHeader ? 206 : 200,
+      headers: {
+        "Content-Range": `bytes ${start}-${end || size - 1}/${size}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize.toString(),
+        "Content-Type": "video/mp4",
+        ...corsHeaders
+      }
+    })
+  );
 };
+
 const runCMDStr = (cmd: string, args: string[]) => {
   return new Promise<string>((resolve, reject) => {
-    const proc = spawn(cmd as string, args, {stdio: ["ignore", "pipe", "pipe"]});
+    const proc = spawn(cmd as string, args, {stdio: ["pipe", "pipe", "pipe"]});
     let chunks = "";
     proc.stdout.on("data", (d) => {
       chunks += d;
     });
     proc.stdout.on("end", () => {
+      proc.kill();
+      processMap.delete(proc);
       resolve(chunks);
     });
 
-    proc.on("error", reject);
+    proc.on("error", (err) => {
+      proc.kill();
+      processMap.delete(proc);
+      reject(err);
+    });
+    processMap.set(proc, proc);
     // proc.stderr.on("data", () => {});
   });
 };
@@ -99,88 +155,221 @@ export const getVideoInfo = async (filePath: string) => {
     filePath // 输入文件路径
   ];
   try {
+    console.log(`${ffprobePath} ${args.join(" ")}`);
     const data = await runCMDStr(ffprobePath, args);
 
-    return JSON.parse(data);
-  } catch (error) {}
+    const info = JSON.parse(data);
+    console.log(info);
+    videoManager.setfilePath(filePath);
+    videoManager.setInfo(info);
+    return info;
+  } catch (error) {
+    console.log("getVideoInfo", error);
+  }
   return "";
 };
+
+export const getVideoFrames = (filePath: string, duration: number) => {
+  return new Promise<Array<[number, number]>>(async (resolve, reject) => {
+    // const command = `${ffprobePath} -v error -skip_frame nokey -select_streams v:0 -show_entries frame=pts_time,key_frame -of csv=p=0 ${filePath}`;
+    const data = await runCMDStr(ffprobePath, [
+      "-v",
+      "error",
+      "-skip_frame",
+      "nokey",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "frame=pts_time,key_frame",
+      "-of",
+      "csv=p=0",
+      filePath
+    ]);
+    const keyFrames = data.trim().split("\n");
+    const result: Array<[number, number]> = [];
+
+    // const m3u8List: string[] = [];
+
+    let start = 0;
+    let max = 0;
+
+    keyFrames.forEach((item: string, i: number) => {
+      const s = item.split(",");
+      const f = Number(s[1]);
+      const time = f - start;
+      if (Number.isNaN(time)) {
+        console.log(item);
+        return;
+      }
+      result.push([start, time]);
+      //  ; m3u8List.push(`#EXTINF:${time},`);
+      //   m3u8List.push(`media://video?file=${filePath}&index=${i}`)
+      start = f;
+      // max = Math.max(max, time);
+    });
+    const last = duration - start;
+    max = Math.max(max, last);
+    result.push([start, last]);
+    // m3u8List.push(`#EXTINF:${last},`);
+    // m3u8List.push(`media://video?file=${filePath}&index=${keyFrames.length}`);
+    // m3u8List.push("#EXT-X-ENDLIST");
+
+    // m3u8List.unshift(
+    //   "#EXTM3U",
+    //   "#EXT-X-VERSION:3",
+    //   "#EXT-X-TARGETDURATION:" + max,
+    //   "#EXT-X-MEDIA-SEQUENCE:0"
+    //   // "#EXT-X-PLAYLIST-TYPE:VOD"
+    // );
+    videoManager.setFrames(result);
+
+    // const m3u8content = m3u8List.join("\n") + "\n";
+    // videoManager.setM3u8Text(m3u8content);
+    // mainConsole(m3u8content);
+
+    resolve(result);
+  });
+};
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "media", // 自定义协议名
+    privileges: {
+      standard: true,
+      secure: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      stream: true
+    }
+  }
+]);
+const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: Function) => {
+  let ffmpegProcess: ChildProcessWithoutNullStreams;
+
+  const onKill = () => {
+    //@ts-ignore
+    if (ffmpegProcess && !ffmpegProcess.killed) {
+      ffmpegProcess.kill();
+      processMap.delete(ffmpegProcess);
+    }
+  };
+  try {
+    const filePath = videoManager.filePath;
+    const frame = videoManager.getFrame(index);
+    if (!frame) {
+      reject(
+        new Response("Error starting FFmpeg process", {
+          status: 500
+        })
+      );
+      return;
+    }
+    const start = frame[0];
+    const time = frame[1];
+    const args: string[] = [
+      "-y",
+      "-i",
+      filePath,
+      "-threads",
+      "2",
+      "-max_muxing_queue_size",
+      "1024",
+      "-ss",
+      start.toString(),
+      "-t",
+      time.toString(),
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-c:a",
+      "aac",
+      "-f",
+      "mp4",
+      "-movflags",
+      "+frag_keyframe+empty_moov",
+      "pipe:1"
+    ];
+    ffmpegProcess = spawn(ffmpegPath, args, {
+      stdio: ["pipe", "pipe", "pipe"] // 确保 stdout 和 stderr 是管道
+    });
+
+    processMap.set(ffmpegProcess, ffmpegProcess);
+
+    // 监听 fetch 请求的中断信号 (e.g., 浏览器取消请求)
+    req.signal.addEventListener("abort", () => {
+      console.log("Fetch request aborted, killing FFmpeg process...");
+      onKill();
+    });
+
+    // 监听 ffmpeg 的 stderr，打印日志或错误信息
+    ffmpegProcess.stderr.on("data", (data: any) => {
+      // console.error(`FFmpeg stderr: ${data}`);
+    });
+    ffmpegProcess.on("error", (err) => {
+      console.error("Failed to start FFmpeg:", err);
+      // 如果进程启动失败，但响应尚未发送，需要处理
+      // 但由于我们立即返回了带有流的响应，这里较难处理
+      // 更好的方式是在启动前验证文件是否存在
+      onKill();
+    });
+    // 监听 ffmpeg 进程退出
+    ffmpegProcess.on("close", (code: number, signal: string) => {
+      onKill();
+      // 如果进程因错误而退出，可以在这里处理
+      if (code !== 0) {
+        reject(
+          new Response(`FFmpeg process exited with code ${code}`, {
+            status: 500
+          })
+        );
+      } else {
+        console.log(`FFmpeg process exited with code ${code} and signal ${signal}`);
+      }
+      // HTTP 响应流会在 ffmpegProcess.stdout.pipe(res) 完成后自动关闭
+    });
+    // 将 ffmpeg 的 stdout (即转码后的视频流) 管道到 HTTP 响应
+    resolve(
+      new Response(ffmpegProcess.stdout as any, {
+        status: 200,
+        headers: {
+          "Content-Type": "video/mp4",
+          ...corsHeaders
+        }
+      })
+    );
+  } catch (error) {
+    // 如果进程已经启动但出错，也要确保清理
+    onKill();
+    reject(
+      new Response("Error starting FFmpeg process", {
+        status: 500
+      })
+    );
+  }
+};
+
 export const registerMedia = () => {
   protocol.handle("media", async (req) => {
-    const urlObj = new URL(req.url);
-    const filePath = decodeURIComponent(urlObj.searchParams.get("file") || "");
-    const type = decodeURIComponent(urlObj.searchParams.get("type") || "");
-    if (urlObj.hostname === "video" && filePath) {
-      if (type !== "h264") {
-        const start = Number(decodeURIComponent(urlObj.searchParams.get("start") || "0"));
-        const duration = Number(decodeURIComponent(urlObj.searchParams.get("duration") || "0"));
-        try {
-          const time = start * 10;
+    return new Promise<Response>(async (resolve, reject) => {
+      const urlObj = new URL(req.url);
 
-          const args = [
-            "-y",
-            "-ss",
-            time.toString(),
-            "-i",
-            filePath,
-            "-t",
-            time + 10 <= duration ? "10" : (duration - time).toString(),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-movflags",
-            "frag_keyframe+empty_moov",
-            "-avoid_negative_ts",
-            "make_zero",
-            "-c:a",
-            "aac",
-            "-f",
-            "mp4",
-            "pipe:1"
-          ];
-          const buf = await runCMDBuffer(ffmpegPath, args);
-          return new Response(buf as any, {
-            headers: {"Content-Type": "video/mp4", "Content-Range": "none", ...corsHeaders}
-          });
-        } catch (e: any) {
-          console.log(e);
-          return new Response(
-            JSON.stringify({
-              data: null,
-              code: 500,
-              msg: "fail to load" + e.message
-            }),
-            {status: 500, headers: {"Content-Type": "application/json"}}
-          );
+      if (urlObj.hostname === "video") {
+        if (isSegVideo(videoManager.type)) {
+          const index = decodeURIComponent(urlObj.searchParams.get("index") || "0");
+          console.log("video", index);
+          getMpegtsVideo(req, index, resolve, reject);
+        } else {
+          console.log("video mp4");
+          await getVideoStream(req, resolve, reject);
         }
-      } else {
-        const rangeHeader = req.headers.get("Range");
-
-        const {start, end, chunkSize, size} = await getRange(filePath, rangeHeader);
-        closeStream();
-        videoStream = fs.createReadStream(filePath, {start, end});
-        videoStream.on("error", (error) => {
-          closeStream();
-          console.log("error", error);
-        });
-
-        return new Response(videoStream as any, {
-          status: rangeHeader ? 206 : 200,
-          headers: {
-            "Content-Range": `bytes ${start}-${end || size - 1}/${size}`,
-            "Accept-Ranges": "bytes",
-            "Content-Length": chunkSize.toString(),
-            "Content-Type": "video/mp4",
-            ...corsHeaders
-          }
-        });
-      }
-    }
-    return new Response(JSON.stringify({code: 400, data: "", msg: "not found"}), {
-      status: 400,
-      headers: {
-        "Content-Type": "application/json"
+      } else if (urlObj.hostname === "m3u8") {
+        resolve(
+          new Response(videoManager.m3u8Text, {
+            status: 200,
+            headers: {"Content-Type": "application/vnd.apple.mpegurl", ...corsHeaders}
+          })
+        );
       }
     });
   });

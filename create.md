@@ -79,3 +79,8 @@ export default function (context) {
 - node 版本 18.20.2
 - 包管理 yarn
 - electron-builder 打包报错 Fatal error: Unable to commit changes 把电脑管家等关闭即可
+
+# Video
+
+https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/load
+https://developer.mozilla.org/zh-CN/docs/Web/API/CanvasRenderingContext2D/drawImage

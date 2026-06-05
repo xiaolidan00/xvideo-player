@@ -2,7 +2,9 @@ import {app, BrowserWindow, ipcMain} from "electron";
 import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
-import {getVideoInfo, registerMedia} from "./VideoFFmpeg";
+import fs from "node:fs";
+import {getVideoFrames, getVideoInfo, isSegVideo, killProcess, registerMedia, videoManager} from "./VideoFFmpeg";
+import {closeDB, getVideoItem, getVideoList, insertVideo, VideoDataType} from "./DataBaseUtil";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,25 +29,72 @@ function createWindow() {
     backgroundColor: "#505050",
     icon: path.join(process.env.VITE_PUBLIC, "logo.ico"),
     webPreferences: {
+      nodeIntegration: false, // 推荐禁用，使用 preload
+      contextIsolation: true, // 推荐启用
       preload: path.join(__dirname, "preload.mjs")
     }
   });
 
+  const sendVideoList = async () => {
+    try {
+      const list = await getVideoList();
+
+      win?.webContents.send(
+        "video-list",
+        list.map((a) => a.filePath)
+      );
+    } catch (error) {
+      console.log(error);
+    }
+  };
   // Test active push message to Renderer-process.
-  win.webContents.on("did-finish-load", () => {
+  win.webContents.on("did-finish-load", async () => {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
+    await sendVideoList();
   });
   ipcMain.on("video-info", async (ev: any, op: any) => {
-    if (op.data.path) {
+    if (fs.existsSync(op.data)) {
       try {
-        const info = (await getVideoInfo(op.data.path)) as any;
-        win?.webContents.send(op.cb, info);
+        console.log(op.data);
+        let item = await getVideoItem(op.data);
+        if (item?.filePath) {
+          const frames = JSON.parse(item.frames);
+          videoManager.setFrames(frames);
+          win?.webContents.send(op.cb, {...item, frames});
+        } else {
+          const info = (await getVideoInfo(op.data)) as any;
+          const duration = Number(info.format.duration);
+          let frames: Array<[number, number]> = [];
+          if (isSegVideo(info.format.format_name)) {
+            frames = await getVideoFrames(op.data, duration);
+          } else {
+            videoManager.setFrames([]);
+          }
+
+          const data: VideoDataType = {
+            filePath: op.data,
+            duration: Number(info.format.duration),
+            formatType: info.format.format_name,
+            width: info.streams[0].width,
+            height: info.streams[0].height,
+            importTime: new Date().getTime(),
+            frames: JSON.stringify(frames),
+            currentTime: 0
+          };
+          await insertVideo(data);
+
+          win?.webContents.send(op.cb, data);
+        }
       } catch (error) {
         console.log(error);
+        win?.webContents.send(op.cb, null);
       }
+    } else {
+      win?.webContents.send(op.cb, null);
     }
   });
   ipcMain.on("top-win", async (ev: any, tag: boolean) => {
+    console.log("top-win", tag);
     win?.setAlwaysOnTop(tag);
   });
   ipcMain.on("save-video", async (ev: any, op: any) => {});
@@ -58,7 +107,10 @@ function createWindow() {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
 }
-
+app.on("before-quit", () => {
+  killProcess();
+  closeDB();
+});
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
@@ -83,6 +135,10 @@ app.whenReady().then(() => {
 });
 
 export function mainConsole(data: any) {
-  console.log("mainConsole", data);
+  // console.log("mainConsole", ...args);
   win?.webContents.send("main-process-console", data);
+}
+
+export function quitApp() {
+  app.quit();
 }

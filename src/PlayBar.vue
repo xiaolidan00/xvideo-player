@@ -1,55 +1,88 @@
 <template>
   <div class="play-bar">
-    <i @click="thePlay = !thePlay" :class="['iconfont', isPlay ? 'icon-pause' : 'icon-play']"></i>
+    <i @click="togglePlay" :class="['iconfont', isPlay ? 'icon-pause' : 'icon-play']"></i>
 
-    <input
-      type="range"
-      v-model.number="theTime"
-      :step="0.1"
-      :min="0"
-      :max="total"
-      :style="{'--range-value': percent + '%'}"
-      @change="onTime"
-    />
+    <div class="play-bar-content">
+      <div>{{ formatTime(theTime) || "0" }}/{{ formatTime(druation) || "0" }}</div>
+      <input
+        type="range"
+        v-model.number="theTime"
+        :step="1"
+        :min="0"
+        :max="druation"
+        :style="{'--range-value': percent + '%'}"
+        @change="onTime"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import {computed, ref} from "vue";
+  import {computed, ref, watch} from "vue";
 
-  const emit = defineEmits(["update:time", "update:isPlay", "play", "pause", "seek", "changeTime"]);
+  const emit = defineEmits(["update:time", "update:isPlay", "play", "pause", "seek"]);
 
   const props = withDefaults(defineProps<{isPlay: boolean; time: number; total: number}>(), {
     time: 0,
     total: 10
   });
-  const thePlay = computed({
-    get: () => props.isPlay,
-    set: (v) => {
-      emit("update:isPlay", v);
-      if (v) {
-        emit("play");
-      } else {
-        emit("pause");
-      }
+  const thePlay = ref(props.isPlay);
+  watch(
+    () => props.isPlay,
+    (v) => {
+      if (thePlay.value != v) thePlay.value = v;
     }
-  });
-  const theTime = computed({
-    get: () => props.time,
-    set: (v) => {
-      emit("update:time", v);
-      emit("changeTime", v);
+  );
+
+  const formatTime = (time: number) => {
+    let t = time + 0;
+    let h = 0;
+    let m = 0;
+    let s = 0;
+    if (t > 3600) {
+      h = Math.floor(t / 3600);
+      t -= h * 3600000;
     }
+    if (t > 60) {
+      m = Math.floor(t / 60);
+      t -= m * 60;
+    }
+    if (t > 1) {
+      s = Math.floor(t / 1);
+    }
+    return `${h > 0 ? h + ":" : ""}${m > 0 ? m + ":" : ""}${s > 0 ? s : ""}`;
+  };
+  const druation = computed(() => {
+    return Math.floor(props.total);
   });
+
+  const togglePlay = () => {
+    thePlay.value = !thePlay.value;
+    if (thePlay.value) {
+      emit("play");
+    } else {
+      emit("pause");
+    }
+  };
+  const theTime = ref(props.time);
+  watch(
+    () => props.time,
+    (v) => {
+      if (theTime.value != v) theTime.value = v;
+    }
+  );
+
   const percent = computed(() => {
-    const v = (100 * props.time) / props.total;
+    const v = (100 * Math.round(props.time)) / druation.value;
     if (Number.isNaN(v)) {
       return "0";
     }
     return v.toFixed(2);
   });
-  const onTime = () => {
-    emit("seek");
+  const onTime = (e: InputEvent) => {
+    const v = Number((e.target as HTMLInputElement).value);
+    emit("update:time", v);
+    emit("seek", v);
   };
 </script>
 
@@ -63,6 +96,13 @@
     align-items: center;
     padding: 0 20px 8px 20px;
     gap: 10px;
+    .play-bar-content {
+      display: inline-flex;
+      width: calc(100% - 50px);
+      flex-direction: column;
+      gap: 10px;
+      font-size: 12px;
+    }
 
     i.iconfont {
       color: white;
@@ -79,7 +119,6 @@
       cursor: pointer;
     }
     input[type="range"] {
-      width: calc(100% - 50px);
       margin: 0px;
       padding: 0px;
       height: 10px;

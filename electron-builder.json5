@@ -25,14 +25,17 @@
         arch: ["ia32"]
       }
     ],
-    icon: "logo.ico",
+    icon: "./public/logo.ico",
     artifactName: "${productName}-win-${arch}-${version}.${ext}"
   },
   nsis: {
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: true,
-    deleteAppDataOnUninstall: true
+    deleteAppDataOnUninstall: true,
+    installerIcon: "./public/logo.ico",
+    uninstallerIcon: "./public/logo.ico",
+    installerHeaderIcon: "./public/logo.ico"
   },
   linux: {
     target: ["AppImage"],
