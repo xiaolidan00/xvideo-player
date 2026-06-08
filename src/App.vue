@@ -72,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-  import {debounce} from "lodash-es";
+  import {add, debounce} from "lodash-es";
   import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef} from "vue";
   import VideoPlayer from "./VideoPlayer.vue";
   import {waitAction} from "./utils/utils";
@@ -120,6 +120,7 @@
         localStorage.setItem("autoplay", state.autoplay + "");
         break;
       case "clear":
+        state.videoList = [];
         await waitAction({
           eventName: "clear-video"
         });
@@ -139,21 +140,32 @@
     };
     input.click();
   };
-  const addVideo = (files: File[]) => {
+  const addVideo = async (files: File[]) => {
     const obj: Record<string, number> = {};
+    const addList = [];
     state.videoList.forEach((f) => {
       obj[f] = 1;
     });
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!obj[file.path]) {
-        state.videoList.push(file.path);
+        addList.push(file.path);
         obj[file.path] = 2;
       }
     }
-    state.videoList.sort((a, b) => obj[b] - obj[a]);
-    if (state.currentVideo === "") {
-      onItem(state.videoList[0]);
+    if (addList.length) {
+      await waitAction(
+        {
+          eventName: "add-video",
+          data: addList
+        },
+        true
+      );
+      state.videoList.push(...addList);
+      state.videoList.sort((a, b) => obj[b] - obj[a]);
+      if (state.currentVideo === "") {
+        onItem(state.videoList[0]);
+      }
     }
   };
   const onPause = async () => {

@@ -17,11 +17,11 @@ const TABLE = "xvideoplayer";
 db.exec(`
   CREATE TABLE IF NOT EXISTS ${TABLE} (
     filePath TEXT NOT NULL,
-    duration REAL NOT NULL,
-    formatType TEXT NOT NULL,
-    width INT NOT NULL,
-    height INT NOT NULL,
     importTime INT NOT NULL,
+    duration REAL,
+    formatType TEXT,
+    width INT,
+    height INT,    
     currentTime REAL,
     frames TEXT
   )`);
@@ -36,7 +36,7 @@ export type VideoDataType = {
   importTime: number;
   frames: string;
 };
-export const insertVideo = (data: VideoDataType) => {
+export const insertVideo = (data: Partial<VideoDataType>) => {
   return new Promise((resolve, reject) => {
     const keys: string[] = [];
     const values: any[] = [];

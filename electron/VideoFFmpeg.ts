@@ -149,12 +149,12 @@ export const getVideoInfo = async (filePath: string) => {
     filePath // 输入文件路径
   ];
   try {
-    console.log(`${ffprobePath} ${args.join(" ")}`);
+    // console.log(`${ffprobePath} ${args.join(" ")}`);
     const data = await runCMDStr(ffprobePath, args);
 
     const info = JSON.parse(data);
-    console.log(info);
-    videoManager.setfilePath(filePath);
+    // console.log(info);
+    // videoManager.setfilePath(filePath);
 
     return info;
   } catch (error) {

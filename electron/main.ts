@@ -43,11 +43,12 @@ function createWindow() {
       preload: path.join(__dirname, "preload.mjs")
     }
   });
+  let videoList: VideoDataType[] = [];
 
   const sendVideoList = async () => {
     try {
       const list = await getVideoList();
-
+      videoList = list;
       win?.webContents.send(
         "video-list",
         list.map((a) => a.filePath)
@@ -61,41 +62,56 @@ function createWindow() {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
     await sendVideoList();
   });
+  const readVideo = async (filePath: string) => {
+    const info = (await getVideoInfo(filePath)) as any;
+    const duration = Number(info.format.duration);
+    let frames: Array<[number, number]> = [];
+    if (isSegVideo(info.format.format_name)) {
+      frames = await getVideoFrames(filePath, duration);
+    } else {
+      videoManager.setFrames([]);
+    }
+
+    const data = {
+      filePath: filePath,
+      duration: Number(info.format.duration),
+      formatType: info.format.format_name,
+      width: info.streams[0].width,
+      height: info.streams[0].height,
+      // importTime: new Date().getTime(),
+      frames: JSON.stringify(frames),
+      currentTime: 0
+    };
+    videoManager.setInfo(data);
+    await updateVideo(data);
+    return data;
+  };
+  ipcMain.on("add-video", async (ev: any, op: any) => {
+    if (op.data.length) {
+      for (let i = 0; i < op.data.length; i++) {
+        await insertVideo({
+          filePath: op.data[i],
+          importTime: new Date().getTime()
+        });
+      }
+    }
+    win?.webContents.send(op.cb, null);
+  });
   ipcMain.on("video-info", async (ev: any, op: any) => {
     if (fs.existsSync(op.data)) {
       try {
-        console.log(op.data);
-        let item = await getVideoItem(op.data);
-        if (item?.filePath) {
-          videoManager.setfilePath(op.data);
+        const item = await getVideoItem(op.data);
+        videoManager.setfilePath(op.data);
+        if (item && item.duration && item.formatType) {
+          mainConsole(op.data);
+          mainConsole(item);
           const frames = JSON.parse(item.frames);
           videoManager.setFrames(frames);
           const data = {...item, frames};
           videoManager.setInfo(data);
           win?.webContents.send(op.cb, data);
         } else {
-          const info = (await getVideoInfo(op.data)) as any;
-          const duration = Number(info.format.duration);
-          let frames: Array<[number, number]> = [];
-          if (isSegVideo(info.format.format_name)) {
-            frames = await getVideoFrames(op.data, duration);
-          } else {
-            videoManager.setFrames([]);
-          }
-
-          const data: VideoDataType = {
-            filePath: op.data,
-            duration: Number(info.format.duration),
-            formatType: info.format.format_name,
-            width: info.streams[0].width,
-            height: info.streams[0].height,
-            importTime: new Date().getTime(),
-            frames: JSON.stringify(frames),
-            currentTime: 0
-          };
-          videoManager.setInfo(data);
-          await insertVideo(data);
-
+          const data = await readVideo(op.data);
           win?.webContents.send(op.cb, data);
         }
       } catch (error) {
@@ -112,9 +128,14 @@ function createWindow() {
   });
   ipcMain.on("del-video", async (ev: any, op: any) => {
     await deleteVideo(op);
+    const idx = videoList.findIndex((a) => a.filePath === op);
+    if (idx >= 0) {
+      videoList.splice(idx, 1);
+    }
   });
   ipcMain.on("clear-video", async (ev: any, op: any) => {
     await clearVideo();
+    videoList = [];
   });
   ipcMain.on("save-video", async (ev: any, item: any) => {
     await updateVideo({filePath: item.filePath, currentTime: item.currentTime});
