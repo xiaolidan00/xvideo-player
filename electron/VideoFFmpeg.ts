@@ -3,8 +3,8 @@ import {protocol, app} from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
-import {spawn, exec} from "child_process";
-import {mainConsole} from "./main";
+import {spawn} from "child_process";
+
 import {ChildProcessWithoutNullStreams} from "node:child_process";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -50,7 +50,7 @@ class VideoManager {
   }
   setInfo(info: any) {
     this.info = info;
-    this.type = this.info.format.format_name;
+    this.type = info.formatType;
   }
 
   getDuration() {
@@ -161,7 +161,7 @@ export const getVideoInfo = async (filePath: string) => {
     const info = JSON.parse(data);
     console.log(info);
     videoManager.setfilePath(filePath);
-    videoManager.setInfo(info);
+
     return info;
   } catch (error) {
     console.log("getVideoInfo", error);
@@ -171,7 +171,6 @@ export const getVideoInfo = async (filePath: string) => {
 
 export const getVideoFrames = (filePath: string, duration: number) => {
   return new Promise<Array<[number, number]>>(async (resolve, reject) => {
-    // const command = `${ffprobePath} -v error -skip_frame nokey -select_streams v:0 -show_entries frame=pts_time,key_frame -of csv=p=0 ${filePath}`;
     const data = await runCMDStr(ffprobePath, [
       "-v",
       "error",
@@ -188,8 +187,6 @@ export const getVideoFrames = (filePath: string, duration: number) => {
     const keyFrames = data.trim().split("\n");
     const result: Array<[number, number]> = [];
 
-    // const m3u8List: string[] = [];
-
     let start = 0;
     let max = 0;
 
@@ -202,30 +199,14 @@ export const getVideoFrames = (filePath: string, duration: number) => {
         return;
       }
       result.push([start, time]);
-      //  ; m3u8List.push(`#EXTINF:${time},`);
-      //   m3u8List.push(`media://video?file=${filePath}&index=${i}`)
+
       start = f;
-      // max = Math.max(max, time);
     });
     const last = duration - start;
     max = Math.max(max, last);
     result.push([start, last]);
-    // m3u8List.push(`#EXTINF:${last},`);
-    // m3u8List.push(`media://video?file=${filePath}&index=${keyFrames.length}`);
-    // m3u8List.push("#EXT-X-ENDLIST");
 
-    // m3u8List.unshift(
-    //   "#EXTM3U",
-    //   "#EXT-X-VERSION:3",
-    //   "#EXT-X-TARGETDURATION:" + max,
-    //   "#EXT-X-MEDIA-SEQUENCE:0"
-    //   // "#EXT-X-PLAYLIST-TYPE:VOD"
-    // );
     videoManager.setFrames(result);
-
-    // const m3u8content = m3u8List.join("\n") + "\n";
-    // videoManager.setM3u8Text(m3u8content);
-    // mainConsole(m3u8content);
 
     resolve(result);
   });
@@ -324,7 +305,7 @@ const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: 
           })
         );
       } else {
-        console.log(`FFmpeg process exited with code ${code} and signal ${signal}`);
+        // console.log(`FFmpeg process exited with code ${code} and signal ${signal}`);
       }
       // HTTP 响应流会在 ffmpegProcess.stdout.pipe(res) 完成后自动关闭
     });
@@ -357,10 +338,9 @@ export const registerMedia = () => {
       if (urlObj.hostname === "video") {
         if (isSegVideo(videoManager.type)) {
           const index = decodeURIComponent(urlObj.searchParams.get("index") || "0");
-          console.log("video", index);
+          console.log("vide", index);
           getMpegtsVideo(req, index, resolve, reject);
         } else {
-          console.log("video mp4");
           await getVideoStream(req, resolve, reject);
         }
       } else if (urlObj.hostname === "m3u8") {

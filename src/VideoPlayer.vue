@@ -1,11 +1,12 @@
 <template>
   <div :class="['video-player', state.isSeg ? 'seg' : '']">
     <div class="video-canvas" ref="containerRef" @click="togglePlay">
-      <canvas ref="canvasRef"></canvas>
+      <canvas ref="canvasRef" v-show="path"></canvas>
+      <div v-show="!path" class="video-empty" @click="openFile">请选择文件</div>
     </div>
     <video ref="videoRef1" class="video1" controls />
     <video ref="videoRef2" class="video2" controls />
-    <div class="video-contols">
+    <div class="video-contols" v-if="path">
       <PlayBar
         :total="state.duration"
         v-model:is-play="state.isPlay"
@@ -28,7 +29,7 @@
   const props = withDefaults(defineProps<{path: string; autoplay?: boolean; isPic?: boolean; speed?: number}>(), {
     speed: 1
   });
-  const emit = defineEmits(["update:isPic", "next"]);
+  const emit = defineEmits(["update:isPic", "next", "pause", "open"]);
   const containerRef = useTemplateRef<HTMLDivElement>("containerRef");
   const canvasRef = useTemplateRef<HTMLCanvasElement>("canvasRef");
   const ctxRef = ref<CanvasRenderingContext2D>();
@@ -81,6 +82,9 @@
     onDraw();
     state.isPlay = true;
   };
+  const openFile = () => {
+    emit("open");
+  };
   const onPause = () => {
     if (!state.isOk) return;
     if (animate) {
@@ -88,37 +92,47 @@
     }
     videoDOM.value!.pause();
     state.isPlay = false;
+    emit("pause");
   };
-  const onSeek = debounce(async (time: number) => {
+  const onTimePlay = debounce(async () => {
+    if (state.isSeg) {
+      state.isLock = true;
+      if (videoDOM.value) videoDOM.value.pause();
+      getCurrentVideo();
+      videoDOM.value = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
+
+      await sleep(500);
+      state.isLock = false;
+      getNextVideo();
+      if (state.isPlay) {
+        playVideo();
+      } else {
+        onDraw();
+      }
+    } else {
+      onDraw();
+    }
+  }, 100);
+
+  const onSeek = async (time: number) => {
     console.log("seek", time);
     if (state.isSeg) {
       for (let i = 0; i < state.frames.length; i++) {
         const f = state.frames[i];
         if (f[0] >= time && time < f[0] + f[1]) {
-          state.isLock = true;
-          videoDOM.value!.pause();
           resetVideo();
-          state.segIndex = i;
-          getCurrentVideo();
           videoDOM.value!.currentTime = time - f[0];
-          await sleep(500);
-          state.isLock = false;
-          getNextVideo();
-          if (state.isPlay) {
-            playVideo();
-          } else {
-            onDraw();
-          }
-
+          state.currentTime = time;
+          state.segIndex = i;
+          onTimePlay();
           break;
         }
       }
     } else {
       videoDOM.value!.currentTime = time;
-      await sleep(100);
-      onDraw();
+      onTimePlay();
     }
-  }, 100);
+  };
   const onResize = () => {
     const container = containerRef.value!;
     const canvas = canvasRef.value!;
@@ -194,9 +208,13 @@
     onPlay();
   };
   const onInit = async () => {
+    if (props.path === "") return;
+    state.isOk = false;
+
     if (animate) {
       cancelAnimationFrame(animate);
     }
+
     resetVideo();
     const ctx = canvasRef.value!.getContext("2d")!;
     ctxRef.value = ctx;
@@ -210,27 +228,39 @@
     );
     if (res) {
       console.log(res);
-      return;
-      state.type = res.format.format_name;
-      state.duration = Number(res.format.duration);
-      state.width = res.streams[0].width;
-      state.height = res.streams[0].height;
+
+      state.type = res.formatType;
+      state.duration = Number(res.duration);
+      state.width = res.width;
+      state.height = res.height;
       state.frames = res.frames;
+      state.currentTime = res.currentTime;
+      if (state.currentTime >= state.duration - 3) {
+        state.currentTime = 0;
+      }
       if (isSegVideo(state.type)) {
         state.isSeg = true;
-        state.segIndex = 0;
-        getCurrentVideo();
-        videoDOM.value = videoRef1.value!;
-        await sleep(100);
-        getNextVideo();
-        playVideo();
+        if (state.currentTime > 0) {
+          state.isOk = true;
+          state.isPlay = true;
+          onSeek(res.currentTime);
+        } else {
+          state.segIndex = 0;
+          getCurrentVideo();
+          videoDOM.value = videoRef1.value!;
+          await sleep(100);
+          getNextVideo();
+          playVideo();
+        }
       } else {
+        state.isSeg = false;
         videoDOM.value = videoRef1.value!;
         const video = videoDOM.value;
         video.src = "media://video?file=" + props.path;
         video.onloadeddata = () => {
           state.isOk = true;
           state.isPlay = true;
+          video.currentTime = state.currentTime;
           video.playbackRate = props.speed;
           onResize();
           onPlay();
@@ -245,13 +275,7 @@
       }
     }
   };
-  watch(
-    () => props.path,
-    (v: string) => {
-      state.isOk = false;
-      if (v) onInit();
-    }
-  );
+
   watch(
     () => props.speed,
     (v) => {
@@ -319,41 +343,7 @@
     onPicture,
     onPlay,
     onPause,
-    onInit
+    onInit,
+    state
   });
 </script>
-
-<style lang="scss" scoped>
-  .video-player {
-    height: 100%;
-    width: 100%;
-    .video-canvas {
-      height: 100%;
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      > canvas {
-        pointer-events: none;
-      }
-    }
-    video {
-      opacity: 0;
-      position: absolute;
-      pointer-events: none;
-    }
-    .video-contols {
-      position: absolute;
-      z-index: 3;
-      left: 0px;
-      bottom: 0px;
-      width: calc(100% - 200px);
-      display: none;
-    }
-    &:hover {
-      .video-contols {
-        display: block;
-      }
-    }
-  }
-</style>

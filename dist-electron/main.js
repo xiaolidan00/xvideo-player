@@ -51,7 +51,7 @@ class VideoManager {
   }
   setInfo(info) {
     this.info = info;
-    this.type = this.info.format.format_name;
+    this.type = info.formatType;
   }
   getDuration() {
     return Number(this.info.format.duration);
@@ -155,7 +155,6 @@ const getVideoInfo = async (filePath) => {
     const info = JSON.parse(data);
     console.log(info);
     videoManager.setfilePath(filePath);
-    videoManager.setInfo(info);
     return info;
   } catch (error) {
     console.log("getVideoInfo", error);
@@ -279,7 +278,6 @@ const getMpegtsVideo = (req, index, resolve, reject) => {
           })
         );
       } else {
-        console.log(`FFmpeg process exited with code ${code} and signal ${signal}`);
       }
     });
     resolve(
@@ -307,10 +305,9 @@ const registerMedia = () => {
       if (urlObj.hostname === "video") {
         if (isSegVideo(videoManager.type)) {
           const index = decodeURIComponent(urlObj.searchParams.get("index") || "0");
-          console.log("video", index);
+          console.log("vide", index);
           getMpegtsVideo(req, index, resolve, reject);
         } else {
-          console.log("video mp4");
           await getVideoStream(req, resolve);
         }
       } else if (urlObj.hostname === "m3u8") {
@@ -340,7 +337,7 @@ db.exec(`
     width INT NOT NULL,
     height INT NOT NULL,
     importTime INT NOT NULL,
-    currentTime INT,
+    currentTime REAL,
     frames TEXT
   )`);
 const insertVideo = (data) => {
@@ -356,6 +353,50 @@ const insertVideo = (data) => {
     }
     const insert = `INSERT INTO ${TABLE} (${keys.join(",")}) VALUES (${keys.map((a) => "?").join(",")})`;
     db.run(insert, values, (err) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(true);
+    });
+  });
+};
+const updateVideo = (data) => {
+  return new Promise((resolve, reject) => {
+    const keys = [];
+    const values = [];
+    for (const k in data) {
+      if (k === "filePath") continue;
+      const v = data[k];
+      if (v !== void 0 && v !== null && v !== "") {
+        keys.push(k);
+        values.push(v);
+      }
+    }
+    values.push(data.filePath);
+    const update = `UPDATE ${TABLE} SET ${keys.map((a) => `${a} = ?`)} WHERE filePath = ?`;
+    db.run(update, values, (err) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(true);
+    });
+  });
+};
+const deleteVideo = (filePath) => {
+  return new Promise((resolve, reject) => {
+    const del = `DELETE FROM ${TABLE} WHERE filePath = ?`;
+    db.run(del, [filePath], (err) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(true);
+    });
+  });
+};
+const clearVideo = () => {
+  return new Promise((resolve, reject) => {
+    const del = `DELETE FROM ${TABLE}`;
+    db.run(del, [], (err) => {
       if (err) {
         reject(err);
       }
@@ -437,9 +478,12 @@ function createWindow() {
         console.log(op.data);
         let item = await getVideoItem(op.data);
         if (item == null ? void 0 : item.filePath) {
+          videoManager.setfilePath(op.data);
           const frames = JSON.parse(item.frames);
           videoManager.setFrames(frames);
-          win == null ? void 0 : win.webContents.send(op.cb, { ...item, frames });
+          const data = { ...item, frames };
+          videoManager.setInfo(data);
+          win == null ? void 0 : win.webContents.send(op.cb, data);
         } else {
           const info = await getVideoInfo(op.data);
           const duration = Number(info.format.duration);
@@ -459,6 +503,7 @@ function createWindow() {
             frames: JSON.stringify(frames),
             currentTime: 0
           };
+          videoManager.setInfo(data);
           await insertVideo(data);
           win == null ? void 0 : win.webContents.send(op.cb, data);
         }
@@ -474,7 +519,14 @@ function createWindow() {
     console.log("top-win", tag);
     win == null ? void 0 : win.setAlwaysOnTop(tag);
   });
-  ipcMain.on("save-video", async (ev, op) => {
+  ipcMain.on("del-video", async (ev, op) => {
+    await deleteVideo(op);
+  });
+  ipcMain.on("clear-video", async (ev, op) => {
+    await clearVideo();
+  });
+  ipcMain.on("save-video", async (ev, item) => {
+    await updateVideo({ filePath: item.filePath, currentTime: item.currentTime });
   });
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);

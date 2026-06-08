@@ -4,7 +4,16 @@ import {fileURLToPath} from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 import {getVideoFrames, getVideoInfo, isSegVideo, killProcess, registerMedia, videoManager} from "./VideoFFmpeg";
-import {closeDB, getVideoItem, getVideoList, insertVideo, VideoDataType} from "./DataBaseUtil";
+import {
+  clearVideo,
+  closeDB,
+  deleteVideo,
+  getVideoItem,
+  getVideoList,
+  insertVideo,
+  updateVideo,
+  VideoDataType
+} from "./DataBaseUtil";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,9 +67,12 @@ function createWindow() {
         console.log(op.data);
         let item = await getVideoItem(op.data);
         if (item?.filePath) {
+          videoManager.setfilePath(op.data);
           const frames = JSON.parse(item.frames);
           videoManager.setFrames(frames);
-          win?.webContents.send(op.cb, {...item, frames});
+          const data = {...item, frames};
+          videoManager.setInfo(data);
+          win?.webContents.send(op.cb, data);
         } else {
           const info = (await getVideoInfo(op.data)) as any;
           const duration = Number(info.format.duration);
@@ -81,6 +93,7 @@ function createWindow() {
             frames: JSON.stringify(frames),
             currentTime: 0
           };
+          videoManager.setInfo(data);
           await insertVideo(data);
 
           win?.webContents.send(op.cb, data);
@@ -97,7 +110,15 @@ function createWindow() {
     console.log("top-win", tag);
     win?.setAlwaysOnTop(tag);
   });
-  ipcMain.on("save-video", async (ev: any, op: any) => {});
+  ipcMain.on("del-video", async (ev: any, op: any) => {
+    await deleteVideo(op);
+  });
+  ipcMain.on("clear-video", async (ev: any, op: any) => {
+    await clearVideo();
+  });
+  ipcMain.on("save-video", async (ev: any, item: any) => {
+    await updateVideo({filePath: item.filePath, currentTime: item.currentTime});
+  });
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);

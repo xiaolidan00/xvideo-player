@@ -1,9 +1,7 @@
 <template>
   <div class="play-bar">
-    <i @click="togglePlay" :class="['iconfont', isPlay ? 'icon-pause' : 'icon-play']"></i>
-
     <div class="play-bar-content">
-      <div>{{ formatTime(theTime) || "0" }}/{{ formatTime(druation) || "0" }}</div>
+      <i @click="togglePlay" :class="['iconfont', isPlay ? 'icon-pause' : 'icon-play']"></i>
       <input
         type="range"
         v-model.number="theTime"
@@ -14,6 +12,7 @@
         @change="onTime"
       />
     </div>
+    <div class="play-bar-text">{{ formatTime(theTime) || "0" }}/{{ formatTime(druation) || "0" }}</div>
   </div>
 </template>
 
@@ -89,21 +88,28 @@
 <style lang="scss" scoped>
   .play-bar {
     width: 100%;
-    height: 48px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 100%);
+    height: 60px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0) 100%);
 
     display: flex;
-    align-items: center;
-    padding: 0 20px 8px 20px;
-    gap: 10px;
-    .play-bar-content {
-      display: inline-flex;
-      width: calc(100% - 50px);
-      flex-direction: column;
-      gap: 10px;
-      font-size: 12px;
-    }
 
+    padding: 0 20px 8px 20px;
+
+    flex-direction: column;
+
+    .play-bar-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .play-bar-text {
+      text-align: right;
+      font-size: 12px;
+      line-height: 12px;
+      pointer-events: none;
+      position: relative;
+      top: -12px;
+    }
     i.iconfont {
       color: white;
       height: 40px;
@@ -119,6 +125,7 @@
       cursor: pointer;
     }
     input[type="range"] {
+      width: calc(100% - 50px);
       margin: 0px;
       padding: 0px;
       height: 10px;

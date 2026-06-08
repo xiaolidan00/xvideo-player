@@ -22,7 +22,7 @@ db.exec(`
     width INT NOT NULL,
     height INT NOT NULL,
     importTime INT NOT NULL,
-    currentTime INT,
+    currentTime REAL,
     frames TEXT
   )`);
 
@@ -58,7 +58,7 @@ export const insertVideo = (data: VideoDataType) => {
   });
 };
 
-export const updateVideo = (data: VideoDataType) => {
+export const updateVideo = (data: Partial<VideoDataType>) => {
   return new Promise((resolve, reject) => {
     const keys: string[] = [];
     const values: any[] = [];
@@ -71,7 +71,7 @@ export const updateVideo = (data: VideoDataType) => {
       }
     }
     values.push(data.filePath);
-    const update = `UPDATE ${TABLE} SET ${keys.map((a) => `SET ${a} = ?`)} WHERE filePath = ?`;
+    const update = `UPDATE ${TABLE} SET ${keys.map((a) => `${a} = ?`)} WHERE filePath = ?`;
     db.run(update, values, (err: any) => {
       if (err) {
         reject(err);
@@ -92,7 +92,17 @@ export const deleteVideo = (filePath: string) => {
     });
   });
 };
-
+export const clearVideo = () => {
+  return new Promise((resolve, reject) => {
+    const del = `DELETE FROM ${TABLE}`;
+    db.run(del, [], (err: any) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(true);
+    });
+  });
+};
 export const getVideoList = () => {
   return new Promise<VideoDataType[]>((resolve, reject) => {
     const query = `SELECT filePath FROM ${TABLE} ORDER BY importTime DESC`;

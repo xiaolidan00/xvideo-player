@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 ffmpeg/index.m3u8
 ffmpeg/hls/*.ts
+db/*.db
