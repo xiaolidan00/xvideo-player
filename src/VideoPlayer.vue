@@ -117,17 +117,18 @@
   const onSeek = async (time: number) => {
     console.log("seek", time);
     if (state.isSeg) {
-      for (let i = 0; i < state.frames.length; i++) {
-        const f = state.frames[i];
-        if (f[0] >= time && time < f[0] + f[1]) {
-          resetVideo();
-          videoDOM.value!.currentTime = time - f[0];
-          state.currentTime = time;
-          state.segIndex = i;
-          onTimePlay();
-          break;
+      if (time >= 0 && time <= state.duration)
+        for (let i = 0; i < state.frames.length; i++) {
+          const f = state.frames[i];
+          if (f[0] >= time && time < f[0] + f[1]) {
+            resetVideo();
+            videoDOM.value!.currentTime = time - f[0];
+            state.currentTime = time;
+            state.segIndex = i;
+            onTimePlay();
+            break;
+          }
         }
-      }
     } else {
       videoDOM.value!.currentTime = time;
       onTimePlay();
@@ -308,18 +309,20 @@
   }, 100);
 
   const onkeyup = (e: KeyboardEvent) => {
-    console.log(e.key);
     let time = 0;
-    switch (e.key) {
+    switch (e.code) {
       case "ArrowRight":
         time = 5;
         break;
       case "ArrowLeft":
         time = -5;
         break;
+      case "Space":
+        togglePlay();
+
+        return;
     }
     if (time !== 0) {
-      videoDOM.value!.pause();
       state.currentTime += time;
       onSeek(state.currentTime);
     }

@@ -338,7 +338,7 @@ export const registerMedia = () => {
       if (urlObj.hostname === "video") {
         if (isSegVideo(videoManager.type)) {
           const index = decodeURIComponent(urlObj.searchParams.get("index") || "0");
-          console.log("vide", index);
+          console.log("video", index);
           getMpegtsVideo(req, index, resolve, reject);
         } else {
           await getVideoStream(req, resolve, reject);
