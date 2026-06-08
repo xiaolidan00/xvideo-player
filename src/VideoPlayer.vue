@@ -116,19 +116,24 @@
 
   const onSeek = async (time: number) => {
     console.log("seek", time);
+    if (time < 0) {
+      time = 0;
+    } else if (time > state.duration) {
+      time = state.duration;
+    }
+
     if (state.isSeg) {
-      if (time >= 0 && time <= state.duration)
-        for (let i = 0; i < state.frames.length; i++) {
-          const f = state.frames[i];
-          if (f[0] >= time && time < f[0] + f[1]) {
-            resetVideo();
-            videoDOM.value!.currentTime = time - f[0];
-            state.currentTime = time;
-            state.segIndex = i;
-            onTimePlay();
-            break;
-          }
+      for (let i = 0; i < state.frames.length; i++) {
+        const f = state.frames[i];
+        if (f[0] >= time && time < f[0] + f[1]) {
+          resetVideo();
+          videoDOM.value!.currentTime = time - f[0];
+          state.currentTime = time;
+          state.segIndex = i;
+          onTimePlay();
+          break;
         }
+      }
     } else {
       videoDOM.value!.currentTime = time;
       onTimePlay();

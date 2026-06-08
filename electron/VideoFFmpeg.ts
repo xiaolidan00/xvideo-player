@@ -33,18 +33,12 @@ class VideoManager {
   filePath: string = "";
   info: any;
   frames: Array<[number, number]> = [];
-  m3u8Text: string = "";
   type: string = "mp4";
   setfilePath(filePath: string) {
     this.filePath = filePath;
     segmentCache.clear();
     inflight.clear();
   }
-  setM3u8Text(text: string) {
-    this.m3u8Text = text;
-    console.log("setM3u8Text", text.length);
-  }
-
   setFrames(frames: Array<[number, number]>) {
     this.frames = frames;
   }
@@ -343,13 +337,6 @@ export const registerMedia = () => {
         } else {
           await getVideoStream(req, resolve, reject);
         }
-      } else if (urlObj.hostname === "m3u8") {
-        resolve(
-          new Response(videoManager.m3u8Text, {
-            status: 200,
-            headers: {"Content-Type": "application/vnd.apple.mpegurl", ...corsHeaders}
-          })
-        );
       }
     });
   });
