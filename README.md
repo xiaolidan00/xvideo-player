@@ -1,5 +1,6 @@
-# XVideoPlayer视频播放器
+# XVideoPlayer本地视频播放器
 
+- [x] ffmpeg视频解码
 - [x] 视频流播放,视频分片播放
 - [x] 倍速
 - [x] 拖拽进度
