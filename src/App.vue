@@ -85,7 +85,7 @@
     isMenu: localStorage.getItem("menu") === "true",
     isTopWin: localStorage.getItem("topwin") === "true",
     autoplay: localStorage.getItem("autoplay") === "true",
-    currentVideo: "",
+    currentVideo: localStorage.getItem("video") || "",
     videoList: [] as string[]
   });
 
@@ -169,7 +169,7 @@
     }
   };
   const onPause = async () => {
-    if (state.currentVideo) {
+    if (state.currentVideo && playerRef.value) {
       await waitAction({
         eventName: "save-video",
         data: {filePath: state.currentVideo, currentTime: playerRef.value!.state.currentTime}
@@ -179,6 +179,7 @@
   const onItem = debounce(async (path: string) => {
     onPause();
     state.currentVideo = path;
+    localStorage.setItem("video", state.currentVideo);
     await nextTick();
     playerRef.value!.onInit();
   }, 100);
@@ -248,6 +249,10 @@
       eventName: "top-win",
       data: state.isTopWin
     });
+    const p = localStorage.getItem("video");
+    if (p) {
+      state.currentVideo = p;
+    }
   });
   const onMsg = (_event: any, data: any) => {
     console.log("main-process-console", data);

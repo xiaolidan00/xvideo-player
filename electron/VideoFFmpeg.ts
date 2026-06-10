@@ -289,19 +289,33 @@ const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: 
       "-i",
       filePath,
       "-threads",
-      "2",
+      "3",
       "-max_muxing_queue_size",
-      "1024",
+      "9999",
+      //开始时间
       "-ss",
       start.toString(),
+      //持续时间
       "-t",
       time.toString(),
+      //画质
+      // "-crf",
+      // "24",
+      //关键帧间隔
+      // "-g",
+      // "60",
+      //编码速度
+      "-preset",
+      "ultrafast",
+      //视频编码
       "-c:v",
       "libx264",
-      "-preset",
-      "veryfast",
+      //音频编码
       "-c:a",
       "aac",
+      //零延迟优化，关闭帧间预测缓存
+      "-tune",
+      "zerolatency",
       "-f",
       "mp4",
       "-movflags",

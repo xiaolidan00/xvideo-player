@@ -26,7 +26,7 @@
     total: 10
   });
   const thePlay = ref(props.isPlay);
-  const percent=ref('0')
+  const percent = ref("0");
   watch(
     () => props.isPlay,
     (v) => {
@@ -64,16 +64,22 @@
       emit("pause");
     }
   };
+  const getPercent = () => {
+    const vv = (100 * Math.round(theTime.value)) / druation.value;
+    if (Number.isNaN(vv)) {
+      percent.value = "0";
+    } else {
+      percent.value = vv.toFixed(2);
+    }
+  };
   const theTime = ref(props.time);
   watch(
     () => props.time,
     (v) => {
       if (theTime.value != v) {
         theTime.value = v;
-        const vv = (100 * Math.round(props.time)) / druation.value;
-        if(Number.isNaN(vv)){
-percent.value='0'
-        }
+
+        getPercent();
       }
     }
   );
@@ -89,6 +95,7 @@ percent.value='0'
     const v = Number((e.target as HTMLInputElement).value);
     emit("update:time", v);
     emit("seek", v);
+    getPercent();
   };
 </script>
 
@@ -140,10 +147,11 @@ percent.value='0'
       appearance: none;
       background: transparent;
       &::-webkit-slider-runnable-track {
-        background-color: #ccc;
-        background: linear-gradient(to right, white 0%, white var(--range-value, 0%), #ccc var(--range-value, 0%));
+        background-color: gray;
+        background: linear-gradient(to right, white 0%, white var(--range-value, 0%), gray var(--range-value, 0%));
         border-radius: 3px;
         height: 6px;
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
       }
       &::-webkit-slider-thumb {
         appearance: none;

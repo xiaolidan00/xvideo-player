@@ -51,8 +51,10 @@
     isLock: false
   });
   const cacheData = new Map<number, Blob>();
+  const statusCache = new Map<number, boolean>();
   const urlCache = new Map<number, string>();
   const isPicture = ref(props.isPic);
+  let interval: any;
   let animate: any;
   let resizeUtil: ResizeUtil;
   const togglePlay = () => {
@@ -66,8 +68,8 @@
   const onDraw = () => {
     const ctx = ctxRef.value!;
     const video = videoDOM.value;
-    if (video && video.videoWidth && video.videoHeight) {
-      ctx.drawImage(video, 0, 0, canvasRef.value!.width, canvasRef.value!.height);
+    if (video && canvasRef.value && video.videoWidth && video.videoHeight) {
+      ctx.drawImage(video, 0, 0, canvasRef.value.width, canvasRef.value.height);
     }
 
     if (state.isPlay) {
@@ -89,6 +91,9 @@
   };
   const onPause = () => {
     if (!state.isOk) return;
+    if (interval) {
+      clearInterval(interval);
+    }
     if (animate) {
       cancelAnimationFrame(animate);
     }
@@ -98,24 +103,25 @@
   };
   const onTimePlay = debounce(async () => {
     emit("pause");
-    if (state.isSeg) {
-      await getCurrentVideo(state.segIndex);
-      videoDOM.value = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
 
-      const f = state.frames[state.segIndex];
-      videoDOM.value.currentTime = state.currentTime - f[0];
-      getCurrentVideo(state.segIndex + 1);
-    }
-    await sleep(100);
+    statusCache.set(state.segIndex, true);
+    await getCurrentVideo(state.segIndex);
+    const dom = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
+
+    const f = state.frames[state.segIndex];
+
     if (state.isPlay) {
-      playVideo();
+      await waitForVideo(dom);
+      dom.currentTime = state.currentTime - f[0];
     } else {
+      videoDOM.value = dom;
       onDraw();
     }
+    statusCache.set(state.segIndex + 1, true);
+    getCurrentVideo(state.segIndex + 1);
   }, 100);
 
   const onSeek = async (time: number) => {
-    console.log("seek", time);
     if (time < 0) {
       time = 0;
     } else if (time > state.duration) {
@@ -124,20 +130,28 @@
 
     if (state.isSeg) {
       for (let i = 0; i < state.frames.length; i++) {
+        statusCache.set(i, false);
+      }
+      for (let i = 0; i < state.frames.length; i++) {
         const f = state.frames[i];
+
         if (f[0] >= time && time < f[0] + f[1]) {
           if (videoDOM.value) videoDOM.value.pause();
           resetVideo();
           state.currentTime = time;
           state.segIndex = i;
-
+          console.log("seek", i, time);
           onTimePlay();
           break;
         }
       }
     } else {
       videoDOM.value!.currentTime = time;
-      onTimePlay();
+      if (state.isPlay) {
+        onPlay();
+      } else {
+        onDraw();
+      }
     }
   };
   const onResize = () => {
@@ -167,18 +181,35 @@
       state.currentTime = frame[0] + videoDOM.value!.currentTime;
     }
   };
-  const onSegEnd = () => {
-    if (state.segIndex + 1 < state.frames.length) {
+  const waitForVideo = (dom: HTMLVideoElement) => {
+    return new Promise((resolve) => {
+      if (interval) {
+        clearInterval(interval);
+      }
+      interval = setInterval(() => {
+        if (urlCache.get(state.segIndex)) {
+          clearInterval(interval);
+          videoDOM.value = dom;
+          playVideo();
+          resolve(true);
+        }
+      }, 100);
+    });
+  };
+  const onSegEnd = async () => {
+    if (state.segIndex + 1 < state.frames.length && state.isPlay) {
       resetVideo();
+      statusCache.delete(state.segIndex);
       URL.revokeObjectURL(urlCache.get(state.segIndex)!);
       urlCache.delete(state.segIndex);
       state.segIndex++;
       console.log("next", state.segIndex);
-
-      videoDOM.value = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
-
-      getCurrentVideo(state.segIndex + 1);
-      playVideo();
+      const dom = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
+      await waitForVideo(dom);
+      if (state.segIndex + 1 < state.frames.length) {
+        statusCache.set(state.segIndex + 1, true);
+        getCurrentVideo(state.segIndex + 1);
+      }
     } else {
       if (props.autoplay) {
         emit("next");
@@ -186,25 +217,38 @@
     }
   };
 
-  const getCurrentVideo = async (segIndex: number) => {
-    let data: Blob;
-    if (cacheData.has(segIndex)) {
-      data = cacheData.get(segIndex)!;
-    } else {
-      data = await getBlob(`media://video?index=${segIndex}&file="${props.path}`);
-      cacheData.set(segIndex, data);
-    }
+  const getCurrentVideo = async (segIndex: number, retry: number = 0) => {
+    if (segIndex < state.frames.length) {
+      try {
+        const startTime = window.performance.now();
+        let data: Blob;
+        if (cacheData.has(segIndex)) {
+          data = cacheData.get(segIndex)!;
+        } else {
+          data = await getBlob(`media://video?index=${segIndex}&file="${props.path}`);
+          cacheData.set(segIndex, data);
+        }
 
-    const url = URL.createObjectURL(data);
-    urlCache.set(segIndex, url);
-    if (segIndex % 2 === 0) {
-      console.log("videoRef1", segIndex);
-      videoRef1.value!.src = url;
-      videoRef1.value!.load();
-    } else {
-      console.log("videoRef2", segIndex);
-      videoRef2.value!.src = url;
-      videoRef2.value!.load();
+        if (statusCache.get(segIndex)) {
+          const url = URL.createObjectURL(data);
+          const t = ((window.performance.now() - startTime) / 1000).toFixed(2);
+          if (segIndex % 2 === 0) {
+            console.log("videoRef1", segIndex, t);
+            videoRef1.value!.src = url;
+            videoRef1.value!.title = segIndex + "";
+            videoRef1.value!.load();
+          } else {
+            console.log("videoRef2", segIndex, t);
+            videoRef2.value!.src = url;
+            videoRef1.value!.title = segIndex + "";
+            videoRef2.value!.load();
+          }
+          urlCache.set(segIndex, url);
+        }
+      } catch (error) {
+        console.log("getCurrentVideo error", error);
+        if (retry < 3) await getCurrentVideo(segIndex, retry + 1);
+      }
     }
   };
 
@@ -225,6 +269,7 @@
     if (animate) {
       cancelAnimationFrame(animate);
     }
+    statusCache.clear();
     cacheData.clear();
     urlCache.forEach((url) => {
       URL.revokeObjectURL(url);
@@ -260,10 +305,11 @@
           onSeek(state.currentTime);
         } else {
           state.segIndex = 0;
+          statusCache.set(0, true);
           await getCurrentVideo(0);
-          videoDOM.value = videoRef1.value!;
+          await waitForVideo(videoRef1.value!);
+          statusCache.set(1, true);
           getCurrentVideo(1);
-          playVideo();
         }
       } else {
         state.isSeg = false;
@@ -354,6 +400,7 @@
     ctxRef.value = ctx;
   });
   onBeforeUnmount(() => {
+    onPause();
     document.removeEventListener("keyup", onkeyup);
     if (resizeUtil) resizeUtil.destroy();
   });
