@@ -24,5 +24,6 @@ release/
 *.njsproj
 *.sln
 *.sw?
+ffmpeg/data.json
 ffmpeg/index.m3u8
 ffmpeg/hls/*.ts
