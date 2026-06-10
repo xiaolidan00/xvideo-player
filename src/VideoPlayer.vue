@@ -23,7 +23,7 @@
   import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref} from "vue";
   import {ResizeUtil} from "./utils/ResizeUtil";
   import PlayBar from "./PlayBar.vue";
-  import {convertBase64UrlToFile, downloadFile, isSegVideo, sleep, waitAction} from "./utils/utils";
+  import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, sleep, waitAction} from "./utils/utils";
   import {debounce} from "lodash-es";
 
   const props = withDefaults(defineProps<{path: string; autoplay?: boolean; isPic?: boolean; speed?: number}>(), {
@@ -50,6 +50,8 @@
     segIndex: 0,
     isLock: false
   });
+  const cacheData = new Map<number, Blob>();
+  const urlCache = new Map<number, string>();
   const isPicture = ref(props.isPic);
   let animate: any;
   let resizeUtil: ResizeUtil;
@@ -95,20 +97,18 @@
     emit("pause");
   };
   const onTimePlay = debounce(async () => {
+    emit("pause");
     if (state.isSeg) {
-      state.isLock = true;
-      if (videoDOM.value) videoDOM.value.pause();
-      getCurrentVideo();
+      await getCurrentVideo(state.segIndex);
       videoDOM.value = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
 
-      await sleep(500);
-      state.isLock = false;
-      getNextVideo();
-      if (state.isPlay) {
-        playVideo();
-      } else {
-        onDraw();
-      }
+      const f = state.frames[state.segIndex];
+      videoDOM.value.currentTime = state.currentTime - f[0];
+      getCurrentVideo(state.segIndex + 1);
+    }
+    await sleep(100);
+    if (state.isPlay) {
+      playVideo();
     } else {
       onDraw();
     }
@@ -126,10 +126,11 @@
       for (let i = 0; i < state.frames.length; i++) {
         const f = state.frames[i];
         if (f[0] >= time && time < f[0] + f[1]) {
+          if (videoDOM.value) videoDOM.value.pause();
           resetVideo();
-          videoDOM.value!.currentTime = time - f[0];
           state.currentTime = time;
           state.segIndex = i;
+
           onTimePlay();
           break;
         }
@@ -164,14 +165,19 @@
     const frame = state.frames[state.segIndex];
     if (frame) {
       state.currentTime = frame[0] + videoDOM.value!.currentTime;
-      //   console.log("current", state.currentTime);
     }
   };
   const onSegEnd = () => {
     if (state.segIndex + 1 < state.frames.length) {
+      resetVideo();
+      URL.revokeObjectURL(urlCache.get(state.segIndex)!);
+      urlCache.delete(state.segIndex);
       state.segIndex++;
       console.log("next", state.segIndex);
-      getNextVideo();
+
+      videoDOM.value = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
+
+      getCurrentVideo(state.segIndex + 1);
       playVideo();
     } else {
       if (props.autoplay) {
@@ -179,38 +185,37 @@
       }
     }
   };
-  const getCurrentVideo = () => {
-    if (state.segIndex % 2 === 0) {
-      videoRef1.value!.src = `media://video?index=${state.segIndex}&file="${props.path}`;
 
+  const getCurrentVideo = async (segIndex: number) => {
+    let data: Blob;
+    if (cacheData.has(segIndex)) {
+      data = cacheData.get(segIndex)!;
+    } else {
+      data = await getBlob(`media://video?index=${segIndex}&file="${props.path}`);
+      cacheData.set(segIndex, data);
+    }
+
+    const url = URL.createObjectURL(data);
+    urlCache.set(segIndex, url);
+    if (segIndex % 2 === 0) {
+      console.log("videoRef1", segIndex);
+      videoRef1.value!.src = url;
       videoRef1.value!.load();
     } else {
-      videoRef2.value!.src = `media://video?index=${state.segIndex}&file="${props.path}`;
-
+      console.log("videoRef2", segIndex);
+      videoRef2.value!.src = url;
       videoRef2.value!.load();
     }
   };
-  const getNextVideo = () => {
-    if (state.segIndex % 2 === 0) {
-      videoRef2.value!.src = `media://video?index=${state.segIndex + 1}&file="${props.path}`;
-      videoRef2.value!.load();
-    } else {
-      videoRef1.value!.src = `media://video?index=${state.segIndex + 1}&file="${props.path}`;
-      videoRef1.value!.load();
-    }
-  };
+
   const playVideo = () => {
-    resetVideo();
-    videoDOM.value = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
     const video = videoDOM.value!;
-    console.log(video.src);
+    video.onloadeddata = () => {
+      onPlay();
+    };
+    video.playbackRate = props.speed;
     video.ontimeupdate = onTimeUpdate;
     video.onended = onSegEnd;
-
-    state.isOk = true;
-    state.isPlay = true;
-    video.playbackRate = props.speed;
-    onResize();
     onPlay();
   };
   const onInit = async () => {
@@ -220,10 +225,12 @@
     if (animate) {
       cancelAnimationFrame(animate);
     }
-
+    cacheData.clear();
+    urlCache.forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    urlCache.clear();
     resetVideo();
-    const ctx = canvasRef.value!.getContext("2d")!;
-    ctxRef.value = ctx;
 
     const res = await waitAction(
       {
@@ -244,18 +251,18 @@
       if (state.currentTime >= state.duration - 3) {
         state.currentTime = 0;
       }
+      onResize();
       if (isSegVideo(state.type)) {
         state.isSeg = true;
+        state.isOk = true;
+        state.isPlay = true;
         if (state.currentTime > 0) {
-          state.isOk = true;
-          state.isPlay = true;
-          onSeek(res.currentTime);
+          onSeek(state.currentTime);
         } else {
           state.segIndex = 0;
-          getCurrentVideo();
+          await getCurrentVideo(0);
           videoDOM.value = videoRef1.value!;
-          await sleep(100);
-          getNextVideo();
+          getCurrentVideo(1);
           playVideo();
         }
       } else {
@@ -279,6 +286,8 @@
           onPause();
         };
       }
+    } else {
+      alert("视频文件读取失败！");
     }
   };
 
@@ -341,6 +350,8 @@
       }
     });
     document.addEventListener("keyup", onkeyup);
+    const ctx = canvasRef.value!.getContext("2d")!;
+    ctxRef.value = ctx;
   });
   onBeforeUnmount(() => {
     document.removeEventListener("keyup", onkeyup);

@@ -72,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-  import {add, debounce} from "lodash-es";
+  import {debounce} from "lodash-es";
   import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef} from "vue";
   import VideoPlayer from "./VideoPlayer.vue";
   import {waitAction} from "./utils/utils";
@@ -82,9 +82,9 @@
   const state = reactive({
     speed: Number(localStorage.getItem("speed")) || 1,
     isPic: false,
-    isMenu: Boolean(localStorage.getItem("menu")) || false,
-    isTopWin: Boolean(localStorage.getItem("topwin")) || false,
-    autoplay: Boolean(localStorage.getItem("autoplay")) || false,
+    isMenu: localStorage.getItem("menu") === "true",
+    isTopWin: localStorage.getItem("topwin") === "true",
+    autoplay: localStorage.getItem("autoplay") === "true",
     currentVideo: "",
     videoList: [] as string[]
   });
@@ -244,6 +244,10 @@
 
     document.addEventListener("dragover", onDragOver);
     document.addEventListener("drop", onDropFile);
+    await waitAction({
+      eventName: "top-win",
+      data: state.isTopWin
+    });
   });
   const onMsg = (_event: any, data: any) => {
     console.log("main-process-console", data);

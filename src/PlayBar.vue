@@ -26,6 +26,7 @@
     total: 10
   });
   const thePlay = ref(props.isPlay);
+  const percent=ref('0')
   watch(
     () => props.isPlay,
     (v) => {
@@ -49,7 +50,7 @@
     if (t > 1) {
       s = Math.floor(t / 1);
     }
-    return `${h > 0 ? h + ":" : ""}${m > 0 ? m + ":" : ""}${s > 0 ? s : ""}`;
+    return `${h > 0 ? (h <= 9 ? "0" : "") + h : "00"}:${m > 0 ? (m <= 9 ? "0" : "") + m : "00"}:${s > 0 ? (s <= 9 ? "0" : "") + s : "00"}`;
   };
   const druation = computed(() => {
     return Math.floor(props.total);
@@ -67,17 +68,23 @@
   watch(
     () => props.time,
     (v) => {
-      if (theTime.value != v) theTime.value = v;
+      if (theTime.value != v) {
+        theTime.value = v;
+        const vv = (100 * Math.round(props.time)) / druation.value;
+        if(Number.isNaN(vv)){
+percent.value='0'
+        }
+      }
     }
   );
 
-  const percent = computed(() => {
-    const v = (100 * Math.round(props.time)) / druation.value;
-    if (Number.isNaN(v)) {
-      return "0";
-    }
-    return v.toFixed(2);
-  });
+  // const percent = computed(() => {
+  //   const v = (100 * Math.round(props.time)) / druation.value;
+  //   if (Number.isNaN(v)) {
+  //     return "0";
+  //   }
+  //   return v.toFixed(2);
+  // });
   const onTime = (e: InputEvent) => {
     const v = Number((e.target as HTMLInputElement).value);
     emit("update:time", v);

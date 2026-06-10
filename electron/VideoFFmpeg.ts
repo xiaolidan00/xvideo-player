@@ -6,6 +6,7 @@ import {fileURLToPath} from "node:url";
 import {spawn} from "child_process";
 
 import {ChildProcessWithoutNullStreams} from "node:child_process";
+import {debounce} from "lodash-es";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 const videoPath = VITE_DEV_SERVER_URL ? path.join(__dirname, "../ffmpeg/") : path.join(process.env.APP_ROOT, "ffmpeg/");
@@ -13,11 +14,56 @@ const videoPath = VITE_DEV_SERVER_URL ? path.join(__dirname, "../ffmpeg/") : pat
 const ffmpegPath = path.join(videoPath, "ffmpeg.exe");
 const ffprobePath = path.join(videoPath, "ffprobe.exe");
 
-const m3u8File = path.join(videoPath, "index.m3u8");
-const outFile = path.join(videoPath, "temp.mp4");
-const hlsPath = path.join(videoPath, "hls");
-const segmentCache = new Map();
-const inflight = new Map();
+const dataPath = path.join(videoPath, "data.json");
+let videoList: any[] = [];
+export const saveVideoData = () => {
+  fs.writeFileSync(dataPath, JSON.stringify(videoList));
+};
+export const getVideoData = () => {
+  if (fs.existsSync(dataPath)) {
+    const data = fs.readFileSync(dataPath);
+    if (data) {
+      videoList = JSON.parse(data.toString());
+      videoList.sort((a, b) => a.importTime - b.importTime);
+      return videoList;
+    }
+  }
+
+  return [];
+};
+export const getVideoDataItem = (filePath: string) => {
+  const item = videoList.find((a) => a.filePath === filePath);
+
+  return item;
+};
+export const deleteVideoData = (filePath: string) => {
+  const idx = videoList.findIndex((a) => a.filePath === filePath);
+  if (idx >= 0) {
+    videoList.splice(idx, 1);
+    saveVideoData();
+  }
+};
+export const updateVideoData = (data: any) => {
+  const item = videoList.find((a) => a.filePath === data.filePath);
+  if (item) {
+    item.currentTime = data.currentTime;
+    saveVideoData();
+  }
+};
+export const addVideoData = (filePath: string[]) => {
+  const addList = filePath.map((a) => ({
+    filePath: a,
+    currentTime: 0,
+    importTime: new Date().getTime()
+  }));
+  videoList.push(...addList);
+  saveVideoData();
+};
+export const clearVideoData = () => {
+  videoList = [];
+  saveVideoData();
+};
+
 const processMap = new Map();
 export const killProcess = () => {
   processMap.forEach((item) => {
@@ -36,8 +82,7 @@ class VideoManager {
   type: string = "mp4";
   setfilePath(filePath: string) {
     this.filePath = filePath;
-    segmentCache.clear();
-    inflight.clear();
+    killProcess();
   }
   setFrames(frames: Array<[number, number]>) {
     this.frames = frames;
@@ -164,7 +209,7 @@ export const getVideoInfo = async (filePath: string) => {
 };
 
 export const getVideoFrames = (filePath: string, duration: number) => {
-  return new Promise<Array<[number, number]>>(async (resolve, reject) => {
+  return new Promise<Array<[number, number]>>(async (resolve) => {
     const data = await runCMDStr(ffprobePath, [
       "-v",
       "error",
@@ -184,7 +229,7 @@ export const getVideoFrames = (filePath: string, duration: number) => {
     let start = 0;
     let max = 0;
 
-    keyFrames.forEach((item: string, i: number) => {
+    keyFrames.forEach((item: string) => {
       const s = item.split(",");
       const f = Number(s[1]);
       const time = f - start;
@@ -199,8 +244,6 @@ export const getVideoFrames = (filePath: string, duration: number) => {
     const last = duration - start;
     max = Math.max(max, last);
     result.push([start, last]);
-
-    videoManager.setFrames(result);
 
     resolve(result);
   });
@@ -278,9 +321,9 @@ const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: 
     });
 
     // 监听 ffmpeg 的 stderr，打印日志或错误信息
-    ffmpegProcess.stderr.on("data", (data: any) => {
-      // console.error(`FFmpeg stderr: ${data}`);
-    });
+    // ffmpegProcess.stderr.on("data", (data: any) => {
+    //     console.error(`FFmpeg stderr: ${data}`);
+    // });
     ffmpegProcess.on("error", (err) => {
       console.error("Failed to start FFmpeg:", err);
       // 如果进程启动失败，但响应尚未发送，需要处理
@@ -299,7 +342,7 @@ const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: 
           })
         );
       } else {
-        // console.log(`FFmpeg process exited with code ${code} and signal ${signal}`);
+        console.log(`${index},FFmpeg process exited with code ${code} and signal ${signal}`);
       }
       // HTTP 响应流会在 ffmpegProcess.stdout.pipe(res) 完成后自动关闭
     });
@@ -325,7 +368,7 @@ const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: 
 };
 
 export const registerMedia = () => {
-  protocol.handle("media", async (req) => {
+  protocol.handle("media", (req) => {
     return new Promise<Response>(async (resolve, reject) => {
       const urlObj = new URL(req.url);
 

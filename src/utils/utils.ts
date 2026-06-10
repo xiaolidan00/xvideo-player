@@ -20,9 +20,25 @@ export const downloadFile = (buffer: File, filename: string) => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
+export function getBlob(url: string) {
+  return new Promise<Blob>((resolve, reject) => {
+    fetch(url, {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache"
+      }
+    })
+      .then((res) => {
+        resolve(res.blob());
+      })
+      .catch((err) => {
+        reject(err);
+      });
+  });
+}
 
 export const waitAction = (sendAction: {eventName: string; data?: any}, receive?: boolean) => {
-  return new Promise<any>((resolve, reject) => {
+  return new Promise<any>((resolve) => {
     if (receive) {
       const cbId = "action" + new Date().getTime();
 

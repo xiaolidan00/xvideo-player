@@ -3,19 +3,23 @@ import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
 import fs from "node:fs";
-import {getVideoFrames, getVideoInfo, isSegVideo, killProcess, registerMedia, videoManager} from "./VideoFFmpeg";
 import {
-  clearVideo,
-  closeDB,
-  deleteVideo,
-  getVideoItem,
-  getVideoList,
-  insertVideo,
-  updateVideo,
-  VideoDataType
-} from "./DataBaseUtil";
+  addVideoData,
+  clearVideoData,
+  deleteVideoData,
+  getVideoData,
+  getVideoDataItem,
+  getVideoFrames,
+  getVideoInfo,
+  isSegVideo,
+  killProcess,
+  registerMedia,
+  saveVideoData,
+  updateVideoData,
+  videoManager
+} from "./VideoFFmpeg";
 
-const require = createRequire(import.meta.url);
+// const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const ROOT_PATH = (process.env.APP_ROOT = path.join(__dirname, ".."));
@@ -43,12 +47,11 @@ function createWindow() {
       preload: path.join(__dirname, "preload.mjs")
     }
   });
-  let videoList: VideoDataType[] = [];
 
   const sendVideoList = async () => {
     try {
-      const list = await getVideoList();
-      videoList = list;
+      const list = await getVideoData();
+
       win?.webContents.send(
         "video-list",
         list.map((a) => a.filePath)
@@ -62,58 +65,41 @@ function createWindow() {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
     await sendVideoList();
   });
-  const readVideo = async (filePath: string) => {
-    const info = (await getVideoInfo(filePath)) as any;
-    const duration = Number(info.format.duration);
-    let frames: Array<[number, number]> = [];
-    if (isSegVideo(info.format.format_name)) {
-      frames = await getVideoFrames(filePath, duration);
-    } else {
-      videoManager.setFrames([]);
-    }
 
-    const data = {
-      filePath: filePath,
-      duration: Number(info.format.duration),
-      formatType: info.format.format_name,
-      width: info.streams[0].width,
-      height: info.streams[0].height,
-      // importTime: new Date().getTime(),
-      frames: JSON.stringify(frames),
-      currentTime: 0
-    };
-    videoManager.setInfo(data);
-    await updateVideo(data);
-    return data;
-  };
   ipcMain.on("add-video", async (ev: any, op: any) => {
     if (op.data.length) {
-      for (let i = 0; i < op.data.length; i++) {
-        await insertVideo({
-          filePath: op.data[i],
-          importTime: new Date().getTime()
-        });
-      }
+      addVideoData(op.data);
     }
     win?.webContents.send(op.cb, null);
   });
   ipcMain.on("video-info", async (ev: any, op: any) => {
     if (fs.existsSync(op.data)) {
       try {
-        const item = await getVideoItem(op.data);
-        videoManager.setfilePath(op.data);
-        if (item && item.duration && item.formatType) {
-          mainConsole(op.data);
-          mainConsole(item);
-          const frames = JSON.parse(item.frames);
+        const filePath = op.data;
+        const item = await getVideoDataItem(filePath);
+        videoManager.setfilePath(filePath);
+        const info = (await getVideoInfo(filePath)) as any;
+        const duration = Number(info.format.duration);
+        let frames: Array<[number, number]> = [];
+        if (isSegVideo(info.format.format_name)) {
+          frames = await getVideoFrames(filePath, duration);
           videoManager.setFrames(frames);
-          const data = {...item, frames};
-          videoManager.setInfo(data);
-          win?.webContents.send(op.cb, data);
         } else {
-          const data = await readVideo(op.data);
-          win?.webContents.send(op.cb, data);
+          videoManager.setFrames([]);
         }
+
+        const data = {
+          filePath: filePath,
+          duration: Number(info.format.duration),
+          formatType: info.format.format_name,
+          width: info.streams[0].width,
+          height: info.streams[0].height,
+          frames,
+          currentTime: item.currentTime || 0
+        };
+        videoManager.setInfo(data);
+
+        win?.webContents.send(op.cb, {...data});
       } catch (error) {
         console.log(error);
         win?.webContents.send(op.cb, null);
@@ -127,18 +113,13 @@ function createWindow() {
     win?.setAlwaysOnTop(tag);
   });
   ipcMain.on("del-video", async (ev: any, op: any) => {
-    await deleteVideo(op);
-    const idx = videoList.findIndex((a) => a.filePath === op);
-    if (idx >= 0) {
-      videoList.splice(idx, 1);
-    }
+    deleteVideoData(op);
   });
   ipcMain.on("clear-video", async (ev: any, op: any) => {
-    await clearVideo();
-    videoList = [];
+    clearVideoData();
   });
   ipcMain.on("save-video", async (ev: any, item: any) => {
-    await updateVideo({filePath: item.filePath, currentTime: item.currentTime});
+    updateVideoData({filePath: item.filePath, currentTime: item.currentTime});
   });
 
   if (VITE_DEV_SERVER_URL) {
@@ -150,8 +131,8 @@ function createWindow() {
   }
 }
 app.on("before-quit", () => {
+  saveVideoData();
   killProcess();
-  closeDB();
 });
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
