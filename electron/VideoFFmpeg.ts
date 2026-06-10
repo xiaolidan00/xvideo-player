@@ -6,15 +6,11 @@ import {fileURLToPath} from "node:url";
 import {spawn} from "child_process";
 
 import {ChildProcessWithoutNullStreams} from "node:child_process";
-import {debounce} from "lodash-es";
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const videoPath = VITE_DEV_SERVER_URL ? path.join(__dirname, "../ffmpeg/") : path.join(process.env.APP_ROOT, "ffmpeg/");
+let ffmpegPath = "";
+let ffprobePath = "";
 
-const ffmpegPath = path.join(videoPath, "ffmpeg.exe");
-const ffprobePath = path.join(videoPath, "ffprobe.exe");
+let dataPath = "";
 
-const dataPath = path.join(videoPath, "data.json");
 let videoList: any[] = [];
 export const saveVideoData = () => {
   fs.writeFileSync(dataPath, JSON.stringify(videoList));
@@ -382,6 +378,16 @@ const getMpegtsVideo = (req: Request, index: string, resolve: Function, reject: 
 };
 
 export const registerMedia = () => {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+  const videoPath = VITE_DEV_SERVER_URL
+    ? path.join(__dirname, "../ffmpeg/")
+    : path.join(process.env.APP_ROOT, "ffmpeg/");
+
+  ffmpegPath = path.join(videoPath, "ffmpeg.exe");
+  ffprobePath = path.join(videoPath, "ffprobe.exe");
+
+  dataPath = path.join(videoPath, "data.json");
   protocol.handle("media", (req) => {
     return new Promise<Response>(async (resolve, reject) => {
       const urlObj = new URL(req.url);

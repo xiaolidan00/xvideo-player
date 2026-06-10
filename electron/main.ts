@@ -1,5 +1,6 @@
 import {app, BrowserWindow, ipcMain} from "electron";
 import {createRequire} from "node:module";
+
 import {fileURLToPath} from "node:url";
 import path from "node:path";
 import fs from "node:fs";
@@ -18,16 +19,15 @@ import {
   updateVideoData,
   videoManager
 } from "./VideoFFmpeg";
+import {registerLog} from "./registerLog";
 
-// const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export const ROOT_PATH = (process.env.APP_ROOT = path.join(__dirname, ".."));
-console.log(ROOT_PATH);
-// 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
-export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
+process.env.APP_ROOT = path.join(__dirname, "..");
+
+const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
+const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 
@@ -130,6 +130,7 @@ function createWindow() {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
 }
+
 app.on("before-quit", () => {
   saveVideoData();
   killProcess();
@@ -151,7 +152,7 @@ app.on("activate", () => {
     createWindow();
   }
 });
-
+registerLog();
 app.whenReady().then(() => {
   createWindow();
   registerMedia();
