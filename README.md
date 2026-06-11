@@ -1,5 +1,7 @@
 # XVideoPlayer本地视频播放器
 
+![demo.png](./demo.png)
+
 - [x] ffmpeg视频解码
 - [x] 视频流播放,视频分片播放
 - [x] 倍速
@@ -19,8 +21,6 @@
 - [x] 进度条优化
 - [x] 将json文件改成sqlite3存储数据
 - [x] 优化视频流读取逻辑
-
-![demo.png](./demo.png)
 
 ## 待解决问题
 
