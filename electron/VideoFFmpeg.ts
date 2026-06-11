@@ -107,7 +107,7 @@ const getVideoStream = async (req: Request, resolve: Function, reject: Function)
       );
     });
 
-    videoStream = fs.createReadStream(filePath, {start, end});
+    videoStream = fs.createReadStream(filePath, {start, end, autoClose: true});
     streamCache.set(videoStream, videoStream);
     videoStream.on("error", (error) => {
       closeStream();
