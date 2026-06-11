@@ -79,6 +79,21 @@ export default function (context) {
 - node 版本 18.20.2
 - 包管理 yarn
 - electron-builder 打包报错 Fatal error: Unable to commit changes 把电脑管家等关闭即可
+- 除了electron/main.ts可以有相关路径，其他文件初始时有路径相关的变量会报错`Object.join (node:path:433:7)at TypeError [ERR_INVALID ARG_TYPE]: The "path" argument must be of type string.`,必须在ready后注册才能计算路径
+- 兼容32位
+
+```js
+win: {
+  target: [
+    {
+      target: "nsis",
+      arch: ["ia32"]
+    }
+  ];
+}
+```
+
+- electron打包sqlite3报错gyp arch，没有二进制包prebuild，到`https://registry.npmmirror.com/binary.html?path=sqlite3/v6.0.1/`手动下载，放到目录下重名修改`\AppData\Local\npm-cache\_prebuilds\8a4946-sqlite3-v6.0.1-napi-v36-win32-x64.tar.gz`
 
 # Video
 

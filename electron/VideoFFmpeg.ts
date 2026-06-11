@@ -9,57 +9,6 @@ import {ChildProcessWithoutNullStreams} from "node:child_process";
 let ffmpegPath = "";
 let ffprobePath = "";
 
-let dataPath = "";
-
-let videoList: any[] = [];
-export const saveVideoData = () => {
-  fs.writeFileSync(dataPath, JSON.stringify(videoList));
-};
-export const getVideoData = () => {
-  if (fs.existsSync(dataPath)) {
-    const data = fs.readFileSync(dataPath);
-    if (data) {
-      videoList = JSON.parse(data.toString());
-      videoList.sort((a, b) => a.importTime - b.importTime);
-      return videoList;
-    }
-  }
-
-  return [];
-};
-export const getVideoDataItem = (filePath: string) => {
-  const item = videoList.find((a) => a.filePath === filePath);
-
-  return item;
-};
-export const deleteVideoData = (filePath: string) => {
-  const idx = videoList.findIndex((a) => a.filePath === filePath);
-  if (idx >= 0) {
-    videoList.splice(idx, 1);
-    saveVideoData();
-  }
-};
-export const updateVideoData = (data: any) => {
-  const item = videoList.find((a) => a.filePath === data.filePath);
-  if (item) {
-    item.currentTime = data.currentTime;
-    saveVideoData();
-  }
-};
-export const addVideoData = (filePath: string[]) => {
-  const addList = filePath.map((a) => ({
-    filePath: a,
-    currentTime: 0,
-    importTime: new Date().getTime()
-  }));
-  videoList.push(...addList);
-  saveVideoData();
-};
-export const clearVideoData = () => {
-  videoList = [];
-  saveVideoData();
-};
-
 const processMap = new Map();
 export const killProcess = () => {
   processMap.forEach((item) => {
@@ -194,7 +143,7 @@ export const getVideoInfo = async (filePath: string) => {
     const data = await runCMDStr(ffprobePath, args);
 
     const info = JSON.parse(data);
-    // console.log(info);
+    // console.log(info.format, info.streams[0]);
     // videoManager.setfilePath(filePath);
 
     return info;
@@ -387,7 +336,6 @@ export const registerMedia = () => {
   ffmpegPath = path.join(videoPath, "ffmpeg.exe");
   ffprobePath = path.join(videoPath, "ffprobe.exe");
 
-  dataPath = path.join(videoPath, "data.json");
   protocol.handle("media", (req) => {
     return new Promise<Response>(async (resolve, reject) => {
       const urlObj = new URL(req.url);

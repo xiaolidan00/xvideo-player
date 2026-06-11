@@ -99,6 +99,11 @@
     }
     videoDOM.value!.pause();
     state.isPlay = false;
+    if (infoCache.has(props.path)) {
+      const info = infoCache.get(props.path);
+      info.currentTime = state.currentTime;
+      infoCache.set(props.path, info);
+    }
     emit("pause");
   };
   const onTimePlay = debounce(async () => {
@@ -262,6 +267,7 @@
     video.onended = onSegEnd;
     onPlay();
   };
+  const infoCache = new Map();
   const onInit = async () => {
     if (props.path === "") return;
     state.isOk = false;
@@ -277,25 +283,34 @@
     urlCache.clear();
     resetVideo();
 
-    const res = await waitAction(
-      {
-        eventName: "video-info",
-        data: props.path
-      },
-      true
-    );
+    let res;
+    if (infoCache.has(props.path)) {
+      res = infoCache.get(props.path);
+    } else {
+      res = await waitAction(
+        {
+          eventName: "video-info",
+          data: props.path
+        },
+        true
+      );
+      if (res) {
+        infoCache.set(props.path, res);
+      }
+    }
+
     if (res) {
       console.log(res);
-
+      state.currentTime = res.currentTime || 0;
+      if (state.currentTime >= state.duration - 3) {
+        state.currentTime = 0;
+      }
       state.type = res.formatType;
       state.duration = Number(res.duration);
       state.width = res.width;
       state.height = res.height;
       state.frames = res.frames;
-      state.currentTime = res.currentTime;
-      if (state.currentTime >= state.duration - 3) {
-        state.currentTime = 0;
-      }
+
       onResize();
       if (isSegVideo(state.type)) {
         state.isSeg = true;
@@ -325,7 +340,6 @@
           onPlay();
         };
         video.ontimeupdate = () => {
-          console.log("current", video.currentTime);
           state.currentTime = video.currentTime;
         };
         video.onended = () => {

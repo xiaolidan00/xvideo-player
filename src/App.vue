@@ -58,12 +58,12 @@
       <div class="video-empty" v-if="state.videoList.length === 0" @click="openVideo">请添加文件</div>
       <div
         v-for="(item, idx) in state.videoList"
-        :key="idx"
-        :class="['video-item', state.currentVideo === item ? 'active' : '', 'item-draggable']"
-        :title="item"
+        :key="item.filePath"
+        :class="['video-item', state.currentVideo === item.filePath ? 'active' : '', 'item-draggable']"
+        :title="item.filePath"
       >
-        <i class="iconfont icon-list1"></i>
-        <span @click="onItem(item)"> {{ formatName(item) }}</span>
+        <i class="iconfont icon-list"></i>
+        <span @click="onItem(item.filePath)" class="video-item-text"> {{ formatName(item.filePath) }}</span>
 
         <i class="iconfont icon-delete" @click="onDel(idx)"></i>
       </div>
@@ -72,21 +72,23 @@
 </template>
 
 <script setup lang="ts">
-  import {debounce} from "lodash-es";
-  import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef} from "vue";
+  import {cloneDeep, debounce} from "lodash-es";
+  import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch} from "vue";
   import VideoPlayer from "./VideoPlayer.vue";
-  import {waitAction} from "./utils/utils";
+  import {sleep, waitAction} from "./utils/utils";
   import {speedList} from "./config";
+  import {Sortable} from "@shopify/draggable";
+  const listRef = useTemplateRef<HTMLDivElement>("listRef");
   const playerRef = useTemplateRef<InstanceType<typeof VideoPlayer>>("playerRef");
-
+  let dragSort: Sortable;
   const state = reactive({
     speed: Number(localStorage.getItem("speed")) || 1,
     isPic: false,
     isMenu: localStorage.getItem("menu") === "true",
     isTopWin: localStorage.getItem("topwin") === "true",
     autoplay: localStorage.getItem("autoplay") === "true",
-    currentVideo: localStorage.getItem("video") || "",
-    videoList: [] as string[]
+    currentVideo: "",
+    videoList: [] as Array<{filePath: string; idx: number}>
   });
 
   const formatName = (str: string) => {
@@ -121,6 +123,7 @@
         break;
       case "clear":
         state.videoList = [];
+        state.currentVideo = "";
         await waitAction({
           eventName: "clear-video"
         });
@@ -140,16 +143,51 @@
     };
     input.click();
   };
+  const sortEnd = debounce(() => {
+    const children = Array.from(listRef.value!.children) as HTMLElement[];
+    const obj: Record<string, number> = {};
+    children.forEach((a, i) => {
+      console.log(a.title, i);
+      obj[a.title] = i;
+    });
+    state.videoList.forEach((item) => {
+      item.idx = Number(obj[item.filePath]);
+    });
+    state.videoList.sort((a, b) => a.idx - b.idx);
+
+    window.ipcRenderer.send("save-all-video", cloneDeep(state.videoList));
+  }, 1000);
+  const onDragList = () => {
+    if (dragSort) {
+      dragSort.destroy();
+    }
+    if (state.videoList.length) {
+      dragSort = new Sortable(listRef.value!, {
+        draggable: ".item-draggable",
+        handle: ".icon-list",
+        mirror: {
+          appendTo: ".video-list",
+          constrainDimensions: true
+        }
+      });
+
+      dragSort.on("sortable:stop", sortEnd);
+    }
+  };
   const addVideo = async (files: File[]) => {
     const obj: Record<string, number> = {};
     const addList = [];
     state.videoList.forEach((f) => {
-      obj[f] = 1;
+      obj[f.filePath] = 1;
     });
+    const len = state.videoList.length;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!obj[file.path]) {
-        addList.push(file.path);
+        addList.push({
+          filePath: file.path,
+          idx: addList.length + len
+        });
         obj[file.path] = 2;
       }
     }
@@ -162,11 +200,12 @@
         true
       );
       state.videoList.push(...addList);
-      state.videoList.sort((a, b) => obj[b] - obj[a]);
+      state.videoList.sort((a, b) => a.idx - b.idx);
       if (state.currentVideo === "") {
-        onItem(state.videoList[0]);
+        onItem(state.videoList[0].filePath);
       }
     }
+    onDragList();
   };
   const onPause = async () => {
     if (state.currentVideo && playerRef.value) {
@@ -177,9 +216,11 @@
     }
   };
   const onItem = debounce(async (path: string) => {
-    onPause();
-    state.currentVideo = path;
-    localStorage.setItem("video", state.currentVideo);
+    if (state.currentVideo !== path) {
+      onPause();
+      state.currentVideo = path;
+      localStorage.setItem("video", state.currentVideo);
+    }
     await nextTick();
     playerRef.value!.onInit();
   }, 100);
@@ -189,26 +230,28 @@
     state.videoList.splice(idx, 1);
     await waitAction({
       eventName: "del-video",
-      data: f
+      data: f.filePath
     });
-    if (f === state.currentVideo) {
+    if (f.filePath === state.currentVideo) {
       playerRef.value!.onPause();
+      state.currentVideo = "";
     }
+    onDragList();
   }, 100);
 
   const nextVideo = debounce(() => {
     if (state.currentVideo) {
-      const index = state.videoList.findIndex((a) => a === state.currentVideo);
+      const index = state.videoList.findIndex((a) => a.filePath === state.currentVideo);
       if (index >= 0 && index + 1 < state.videoList.length) {
-        onItem(state.videoList[index + 1]!);
+        onItem(state.videoList[index + 1]!.filePath);
       }
     }
   }, 100);
   const preVideo = debounce(() => {
     if (state.currentVideo) {
-      const index = state.videoList.findIndex((a) => a === state.currentVideo);
+      const index = state.videoList.findIndex((a) => a.filePath === state.currentVideo);
       if (index >= 0 && index - 1 >= 0) {
-        onItem(state.videoList[index - 1]!);
+        onItem(state.videoList[index - 1]!.filePath);
       }
     }
   }, 100);
@@ -241,6 +284,7 @@
   };
 
   onMounted(async () => {
+    onDragList();
     document.title = "XVideoPlayer";
 
     document.addEventListener("dragover", onDragOver);
@@ -249,21 +293,31 @@
       eventName: "top-win",
       data: state.isTopWin
     });
-    const p = localStorage.getItem("video");
-    if (p) {
-      state.currentVideo = p;
-    }
   });
   const onMsg = (_event: any, data: any) => {
     console.log("main-process-console", data);
   };
-  const onVideoList = (_event: any, data: any) => {
+  const onVideoList = async (_event: any, data: any) => {
     console.log("video-list", data);
     state.videoList = data;
+    const p = localStorage.getItem("video");
+    if (p) {
+      const item = state.videoList.find((a) => a.filePath === p);
+      if (item) state.currentVideo = p;
+    } else {
+      state.currentVideo = "";
+    }
+    await nextTick();
+    onDragList();
   };
+
   window.ipcRenderer.on("video-list", onVideoList);
   window.ipcRenderer.on("main-process-console", onMsg);
   onBeforeUnmount(() => {
+    if (dragSort) {
+      dragSort.destroy();
+    }
+
     document.removeEventListener("dragover", onDragOver);
     document.removeEventListener("drop", onDropFile);
     window.ipcRenderer.off("main-process-console", onMsg);

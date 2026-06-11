@@ -1,6 +1,6 @@
 @font-face {
   font-family: "iconfont"; /* Project id 5185953 */
-  src: url('iconfont.ttf?t=1780570356316') format('truetype');
+  src: url('iconfont.ttf?t=1781143999073') format('truetype');
 }
 
 .iconfont {
@@ -9,6 +9,10 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.icon-list:before {
+  content: "\e7b5";
 }
 
 .icon-zhiding:before {
@@ -29,14 +33,6 @@
 
 .icon-open_file:before {
   content: "\ead4";
-}
-
-.icon-quanping:before {
-  content: "\e615";
-}
-
-.icon-suoxiao:before {
-  content: "\e616";
 }
 
 .icon-jietu:before {

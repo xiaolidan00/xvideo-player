@@ -4,22 +4,17 @@ import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
 import fs from "node:fs";
+import {getVideoFrames, getVideoInfo, isSegVideo, killProcess, registerMedia, videoManager} from "./VideoFFmpeg";
 import {
-  addVideoData,
-  clearVideoData,
-  deleteVideoData,
-  getVideoData,
-  getVideoDataItem,
-  getVideoFrames,
-  getVideoInfo,
-  isSegVideo,
-  killProcess,
-  registerMedia,
-  saveVideoData,
-  updateVideoData,
-  videoManager
-} from "./VideoFFmpeg";
-import {registerLog} from "./registerLog";
+  clearVideo,
+  closeDB,
+  deleteVideo,
+  getVideoItem,
+  getVideoList,
+  insertVideo,
+  registerDb,
+  updateVideo
+} from "./DataBaseUtil";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,15 +42,10 @@ function createWindow() {
       preload: path.join(__dirname, "preload.mjs")
     }
   });
-
   const sendVideoList = async () => {
     try {
-      const list = await getVideoData();
-
-      win?.webContents.send(
-        "video-list",
-        list.map((a) => a.filePath)
-      );
+      const list = await getVideoList();
+      win?.webContents.send("video-list", list);
     } catch (error) {
       console.log(error);
     }
@@ -63,12 +53,15 @@ function createWindow() {
   // Test active push message to Renderer-process.
   win.webContents.on("did-finish-load", async () => {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
-    await sendVideoList();
+    await sleep(1000);
+    sendVideoList();
   });
 
   ipcMain.on("add-video", async (ev: any, op: any) => {
     if (op.data.length) {
-      addVideoData(op.data);
+      for (let i = 0; i < op.data.length; i++) {
+        await insertVideo(op.data[i]);
+      }
     }
     win?.webContents.send(op.cb, null);
   });
@@ -76,7 +69,7 @@ function createWindow() {
     if (fs.existsSync(op.data)) {
       try {
         const filePath = op.data;
-        const item = await getVideoDataItem(filePath);
+        const item = await getVideoItem(filePath);
         videoManager.setfilePath(filePath);
         const info = (await getVideoInfo(filePath)) as any;
         const duration = Number(info.format.duration);
@@ -113,13 +106,19 @@ function createWindow() {
     win?.setAlwaysOnTop(tag);
   });
   ipcMain.on("del-video", async (ev: any, op: any) => {
-    deleteVideoData(op);
+    deleteVideo(op);
   });
   ipcMain.on("clear-video", async (ev: any, op: any) => {
-    clearVideoData();
+    clearVideo();
   });
   ipcMain.on("save-video", async (ev: any, item: any) => {
-    updateVideoData({filePath: item.filePath, currentTime: item.currentTime});
+    updateVideo({filePath: item.filePath, currentTime: item.currentTime});
+  });
+  ipcMain.on("save-all-video", async (ev: any, list: any[]) => {
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      updateVideo({filePath: item.filePath, idx: item.idx});
+    }
   });
 
   if (VITE_DEV_SERVER_URL) {
@@ -132,7 +131,7 @@ function createWindow() {
 }
 
 app.on("before-quit", () => {
-  saveVideoData();
+  closeDB();
   killProcess();
 });
 // Quit when all windows are closed, except on macOS. There, it's common
@@ -152,10 +151,11 @@ app.on("activate", () => {
     createWindow();
   }
 });
-registerLog();
-app.whenReady().then(() => {
-  createWindow();
+
+app.whenReady().then(async () => {
+  registerDb();
   registerMedia();
+  createWindow();
 });
 
 export function mainConsole(data: any) {
@@ -166,3 +166,10 @@ export function mainConsole(data: any) {
 export function quitApp() {
   app.quit();
 }
+export const sleep = (time: number) => {
+  return new Promise<number>((resolve) => {
+    setTimeout(() => {
+      resolve(time);
+    }, time);
+  });
+};
