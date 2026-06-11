@@ -34,6 +34,7 @@
           :class="['video-tool', 'iconfont icon-huazhonghua', state.isPic ? 'active' : '']"
         ></i> -->
 
+        <!-- <i class="video-tool" @click="onAction('fix')" title="修复画面与声音不同步" v-if="state.currentVideo">fix</i> -->
         <i class="video-tool iconfont icon-delete" title="清空文件列表" @click="onAction('clear')"></i>
         <i
           :class="['video-tool iconfont icon-caidan', state.isMenu ? 'active' : '']"
@@ -100,9 +101,9 @@
       case "capture":
         playerRef.value!.captureVideo();
         break;
-      case "picture":
-        playerRef.value!.onPicture();
-        break;
+      // case "picture":
+      //   playerRef.value!.onPicture();
+      //   break;
 
       case "topwin":
         state.isTopWin = !state.isTopWin;
@@ -112,6 +113,12 @@
           data: state.isTopWin
         });
         break;
+      // case "fix":
+      //   await waitAction({
+      //     eventName: "sync-video"
+      //   });
+      //   alert("修复命令已执行，请耐心等待");
+      //   break;
 
       case "menu":
         state.isMenu = !state.isMenu;
@@ -147,7 +154,6 @@
     const children = Array.from(listRef.value!.children) as HTMLElement[];
     const obj: Record<string, number> = {};
     children.forEach((a, i) => {
-      console.log(a.title, i);
       obj[a.title] = i;
     });
     state.videoList.forEach((item) => {
@@ -174,7 +180,7 @@
       dragSort.on("sortable:stop", sortEnd);
     }
   };
-  const addVideo = async (files: File[]) => {
+  const addVideo = async (files: any[]) => {
     const obj: Record<string, number> = {};
     const addList = [];
     state.videoList.forEach((f) => {

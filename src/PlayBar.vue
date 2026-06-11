@@ -85,7 +85,7 @@
     } else if (w > rect.width) {
       w = rect.width;
     }
-    console.log(ev.x);
+
     const v = w / rect.width;
     theTime.value = v * props.total;
     const vv = 100 * v;
@@ -94,7 +94,7 @@
     } else {
       percent.value = vv.toFixed(2);
     }
-    console.log(percent.value);
+
     //@ts-ignore
     slider.style["--range-value"] = percent.value + "%";
     emit("update:time", theTime.value);

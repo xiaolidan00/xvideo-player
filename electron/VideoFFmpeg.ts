@@ -5,7 +5,8 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {spawn} from "child_process";
 
-import {ChildProcessWithoutNullStreams} from "node:child_process";
+import {ChildProcessWithoutNullStreams, exec} from "node:child_process";
+import {mainConsole} from "./main";
 let ffmpegPath = "";
 let ffprobePath = "";
 
@@ -187,6 +188,13 @@ const corsHeaders = {
   "Cache-Control": "no-cache"
   // "Cache-Control": "public, max-age=31536000, immutable"
 };
+// export const syncVideo = () => {
+//   const filePath = videoManager.filePath;
+//   if (filePath)
+//     exec(
+//       `${ffmpegPath} -i ${filePath}  -vf "setpts=PTS-STARTPTS"  -af "asetpts=PTS-STARTPTS"  -c:v libx264 -c:a aac -f mp4 ${filePath.substring(0, filePath.lastIndexOf("."))}.mp4`
+//     );
+// };
 export const getVideoInfo = async (filePath: string) => {
   const args = [
     "-v",
@@ -202,6 +210,8 @@ export const getVideoInfo = async (filePath: string) => {
     const data = await runCMDStr(ffprobePath, args);
 
     const info = JSON.parse(data);
+
+    mainConsole(info);
     // console.log(info.format, info.streams[0]);
     // videoManager.setfilePath(filePath);
 

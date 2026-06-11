@@ -4,7 +4,15 @@ import {createRequire} from "node:module";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
 import fs from "node:fs";
-import {getVideoFrames, getVideoInfo, isSegVideo, killProcess, registerMedia, videoManager} from "./VideoFFmpeg";
+import {
+  getVideoFrames,
+  getVideoInfo,
+  isSegVideo,
+  killProcess,
+  registerMedia,
+  syncVideo,
+  videoManager
+} from "./VideoFFmpeg";
 import {
   clearVideo,
   closeDB,
@@ -111,6 +119,9 @@ function createWindow() {
   ipcMain.on("clear-video", async (ev: any, op: any) => {
     clearVideo();
   });
+  // ipcMain.on("sync-video", async (ev: any, op: any) => {
+  //   syncVideo();
+  // });
   ipcMain.on("save-video", async (ev: any, item: any) => {
     updateVideo({filePath: item.filePath, currentTime: item.currentTime});
   });
