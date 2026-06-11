@@ -10,12 +10,25 @@ let ffmpegPath = "";
 let ffprobePath = "";
 
 const processMap = new Map();
+const streamCache = new Map();
 export const killProcess = () => {
   processMap.forEach((item) => {
     if (!item.killed) {
       item.kill();
     }
   });
+  processMap.clear();
+  streamCache.forEach((videoStream) => {
+    if (videoStream) {
+      if (!videoStream.closed) {
+        videoStream.close();
+      }
+      if (!videoStream.destroyed) {
+        videoStream.destroy();
+      }
+    }
+  });
+  streamCache.clear();
 };
 export const isSegVideo = (type: string) => {
   return type === "mpegts";
@@ -64,30 +77,84 @@ const getRange = async (filePath: string, rangeHeader: string | null) => {
 
   return {start, end, chunkSize, size};
 };
+
 const getVideoStream = async (req: Request, resolve: Function, reject: Function) => {
-  const filePath = videoManager.filePath;
-  const rangeHeader = req.headers.get("Range");
-
-  const {start, end, chunkSize, size} = await getRange(filePath, rangeHeader);
-  closeStream();
-  videoStream = fs.createReadStream(filePath, {start, end});
-  videoStream.on("error", (error) => {
-    closeStream();
-    console.log("error", error);
-  });
-
-  resolve(
-    new Response(videoStream as any, {
-      status: rangeHeader ? 206 : 200,
-      headers: {
-        "Content-Range": `bytes ${start}-${end || size - 1}/${size}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunkSize.toString(),
-        "Content-Type": "video/mp4",
-        ...corsHeaders
+  let videoStream: fs.ReadStream;
+  const closeStream = () => {
+    if (videoStream) {
+      if (!videoStream.closed) {
+        videoStream.close();
       }
-    })
-  );
+      if (!videoStream.destroyed) {
+        videoStream.destroy();
+      }
+      streamCache.delete(videoStream);
+    }
+  };
+  try {
+    const filePath = videoManager.filePath;
+    const rangeHeader = req.headers.get("Range");
+
+    const {start, end, chunkSize, size} = await getRange(filePath, rangeHeader);
+
+    req.signal.addEventListener("abort", () => {
+      console.log("Fetch request aborted");
+      closeStream();
+      reject(
+        new Response("Fetch request aborted", {
+          status: 500
+        })
+      );
+    });
+
+    videoStream = fs.createReadStream(filePath, {start, end});
+    streamCache.set(videoStream, videoStream);
+    videoStream.on("error", (error) => {
+      closeStream();
+      console.log("error", error);
+      reject(
+        new Response("ReadStream Error", {
+          status: 500
+        })
+      );
+    });
+    videoStream.on("end", () => {
+      closeStream();
+    });
+    videoStream.on("close", (code) => {
+      closeStream();
+      if (code !== 0) {
+        reject(
+          new Response(`ReadStream exited with code ${code}`, {
+            status: 500
+          })
+        );
+      } else {
+        console.log(`ReadStream exited with code ${code}`);
+      }
+    });
+
+    resolve(
+      new Response(videoStream as any, {
+        status: rangeHeader ? 206 : 200,
+        headers: {
+          "Content-Range": `bytes ${start}-${end || size - 1}/${size}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunkSize.toString(),
+          "Content-Type": "video/mp4",
+          ...corsHeaders
+        }
+      })
+    );
+  } catch (error) {
+    closeStream();
+    console.log(error);
+    reject(
+      new Response("ReadStream Error", {
+        status: 500
+      })
+    );
+  }
 };
 
 const runCMDStr = (cmd: string, args: string[]) => {
@@ -111,14 +178,6 @@ const runCMDStr = (cmd: string, args: string[]) => {
     processMap.set(proc, proc);
     // proc.stderr.on("data", () => {});
   });
-};
-
-let videoStream: fs.ReadStream;
-const closeStream = () => {
-  if (videoStream) {
-    videoStream.close();
-    videoStream.destroy();
-  }
 };
 
 const corsHeaders = {

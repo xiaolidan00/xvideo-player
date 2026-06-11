@@ -1,12 +1,12 @@
 <template>
   <div :class="['video-player', state.isSeg ? 'seg' : '']">
     <div class="video-canvas" ref="containerRef" @click="togglePlay">
-      <canvas ref="canvasRef" v-show="path"></canvas>
-      <div v-show="!path" class="video-empty" @click="openFile">请选择文件</div>
+      <canvas ref="canvasRef" v-show="path && state.isOk"></canvas>
+      <div v-show="!path || !state.isOk" class="video-empty" @click="openFile">请选择文件</div>
     </div>
     <video ref="videoRef1" class="video1" controls />
     <video ref="videoRef2" class="video2" controls />
-    <div class="video-contols" v-if="path">
+    <div class="video-contols" v-if="path && state.isOk">
       <PlayBar
         :total="state.duration"
         v-model:is-play="state.isPlay"
@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-  import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref} from "vue";
+  import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref, nextTick} from "vue";
   import {ResizeUtil} from "./utils/ResizeUtil";
   import PlayBar from "./PlayBar.vue";
   import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, sleep, waitAction} from "./utils/utils";
@@ -60,7 +60,11 @@
   const togglePlay = () => {
     state.isPlay = !state.isPlay;
     if (state.isPlay) {
-      onPlay();
+      if (state.isOk == false) {
+        onInit();
+      } else {
+        onPlay();
+      }
     } else {
       onPause();
     }
@@ -106,33 +110,21 @@
     }
     emit("pause");
   };
-  const onTimePlay = debounce(async () => {
-    emit("pause");
 
-    statusCache.set(state.segIndex, true);
-    await getCurrentVideo(state.segIndex);
-    const dom = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
-
-    const f = state.frames[state.segIndex];
-
-    if (state.isPlay) {
-      await waitForVideo(dom);
-      dom.currentTime = state.currentTime - f[0];
-    } else {
-      videoDOM.value = dom;
-      onDraw();
-    }
-    statusCache.set(state.segIndex + 1, true);
-    getCurrentVideo(state.segIndex + 1);
-  }, 100);
-
+  let locktimeout: any;
   const onSeek = async (time: number) => {
+    emit("pause");
+    state.isLock = true;
+    if (locktimeout) {
+      clearTimeout(locktimeout);
+    }
+
     if (time < 0) {
       time = 0;
     } else if (time > state.duration) {
       time = state.duration;
     }
-
+    if (videoDOM.value) videoDOM.value.pause();
     if (state.isSeg) {
       for (let i = 0; i < state.frames.length; i++) {
         statusCache.set(i, false);
@@ -141,23 +133,44 @@
         const f = state.frames[i];
 
         if (f[0] >= time && time < f[0] + f[1]) {
-          if (videoDOM.value) videoDOM.value.pause();
           resetVideo();
           state.currentTime = time;
           state.segIndex = i;
           console.log("seek", i, time);
-          onTimePlay();
+
           break;
         }
       }
     } else {
+      state.currentTime = time;
       videoDOM.value!.currentTime = time;
-      if (state.isPlay) {
-        onPlay();
-      } else {
-        onDraw();
-      }
     }
+    locktimeout = setTimeout(async () => {
+      state.isLock = false;
+
+      if (state.isSeg) {
+        statusCache.set(state.segIndex, true);
+        await getCurrentVideo(state.segIndex);
+        const dom = state.segIndex % 2 === 0 ? videoRef1.value! : videoRef2.value!;
+
+        const f = state.frames[state.segIndex];
+        if (state.isPlay) {
+          await waitForVideo(dom);
+          dom.currentTime = state.currentTime - f[0];
+        } else {
+          videoDOM.value = dom;
+          onDraw();
+        }
+        statusCache.set(state.segIndex + 1, true);
+        getCurrentVideo(state.segIndex + 1);
+      } else {
+        if (state.isPlay) {
+          onPlay();
+        } else {
+          onDraw();
+        }
+      }
+    }, 100);
   };
   const onResize = () => {
     const container = containerRef.value!;
@@ -340,6 +353,7 @@
           onPlay();
         };
         video.ontimeupdate = () => {
+          if (state.isLock) return;
           state.currentTime = video.currentTime;
         };
         video.onended = () => {

@@ -1,7 +1,7 @@
 {
   "name": "xvideo-player",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,9 +10,7 @@
   },
   "dependencies": {
     "@shopify/draggable": "^1.2.1",
-    "electron-log": "^5.4.4",
     "lodash-es": "^4.18.1",
-    "sqlite3": "^6.0.1",
     "vue": "^3.4.21"
   },
   "devDependencies": {
@@ -21,6 +19,7 @@
     "electron": "^30.0.1",
     "electron-builder": "^24.13.3",
     "sass": "^1.100.0",
+    "sqlite3": "^6.0.1",
     "typescript": "^5.2.2",
     "vite": "^5.1.6",
     "vite-plugin-electron": "^0.28.6",

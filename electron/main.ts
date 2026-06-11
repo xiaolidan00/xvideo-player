@@ -83,7 +83,7 @@ function createWindow() {
 
         const data = {
           filePath: filePath,
-          duration: Number(info.format.duration),
+          duration: duration,
           formatType: info.format.format_name,
           width: info.streams[0].width,
           height: info.streams[0].height,

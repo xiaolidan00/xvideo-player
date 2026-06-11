@@ -2,23 +2,20 @@
   <div class="play-bar">
     <div class="play-bar-content">
       <i @click="togglePlay" :class="['iconfont', isPlay ? 'icon-pause' : 'icon-play']"></i>
-      <input
-        type="range"
-        v-model.number="theTime"
-        :step="1"
-        :min="0"
-        :max="druation"
-        :style="{'--range-value': percent + '%'}"
-        @change="onTime"
-      />
+      <div class="play-slider" ref="sliderRef" :style="{'--range-value': percent + '%'}">
+        <div class="bar"></div>
+        <div class="circle"></div>
+      </div>
     </div>
-    <div class="play-bar-text">{{ formatTime(theTime) || "0" }}/{{ formatTime(druation) || "0" }}</div>
+    <div class="play-bar-text">{{ formatTime(theTime) || "0" }}/{{ formatTime(props.total) || "0" }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import {computed, ref, watch} from "vue";
-
+  import {debounce} from "lodash-es";
+  import {ref, useTemplateRef, watch} from "vue";
+  import {useDragMove} from "./utils/useDragMove";
+  const sliderRef = useTemplateRef<HTMLDivElement>("sliderRef");
   const emit = defineEmits(["update:time", "update:isPlay", "play", "pause", "seek"]);
 
   const props = withDefaults(defineProps<{isPlay: boolean; time: number; total: number}>(), {
@@ -48,13 +45,10 @@
       t -= m * 60;
     }
     if (t > 1) {
-      s = Math.floor(t / 1);
+      s = Math.floor(t);
     }
     return `${h > 0 ? (h <= 9 ? "0" : "") + h : "00"}:${m > 0 ? (m <= 9 ? "0" : "") + m : "00"}:${s > 0 ? (s <= 9 ? "0" : "") + s : "00"}`;
   };
-  const druation = computed(() => {
-    return Math.floor(props.total);
-  });
 
   const togglePlay = () => {
     thePlay.value = !thePlay.value;
@@ -64,14 +58,7 @@
       emit("pause");
     }
   };
-  const getPercent = () => {
-    const vv = (100 * Math.round(theTime.value)) / druation.value;
-    if (Number.isNaN(vv)) {
-      percent.value = "0";
-    } else {
-      percent.value = vv.toFixed(2);
-    }
-  };
+
   const theTime = ref(props.time);
   watch(
     () => props.time,
@@ -79,24 +66,54 @@
       if (theTime.value != v) {
         theTime.value = v;
 
-        getPercent();
+        const vv = (100 * theTime.value) / props.total;
+        if (Number.isNaN(vv)) {
+          percent.value = "0";
+        } else {
+          percent.value = vv.toFixed(2);
+        }
       }
     }
   );
+  const onMove = (ev: any) => {
+    const slider = sliderRef.value!;
+    const rect = slider.getBoundingClientRect();
 
-  // const percent = computed(() => {
-  //   const v = (100 * Math.round(props.time)) / druation.value;
-  //   if (Number.isNaN(v)) {
-  //     return "0";
-  //   }
-  //   return v.toFixed(2);
-  // });
-  const onTime = (e: InputEvent) => {
-    const v = Number((e.target as HTMLInputElement).value);
-    emit("update:time", v);
-    emit("seek", v);
-    getPercent();
+    let w = ev.x - rect.left;
+    if (w < 0) {
+      w = 0;
+    } else if (w > rect.width) {
+      w = rect.width;
+    }
+    console.log(ev.x);
+    const v = w / rect.width;
+    theTime.value = v * props.total;
+    const vv = 100 * v;
+    if (Number.isNaN(vv)) {
+      percent.value = "0";
+    } else {
+      percent.value = vv.toFixed(2);
+    }
+    console.log(percent.value);
+    //@ts-ignore
+    slider.style["--range-value"] = percent.value + "%";
+    emit("update:time", theTime.value);
+    emit("seek", theTime.value);
   };
+
+  useDragMove(sliderRef, {
+    start: onMove,
+    move: onMove,
+    end: onMove
+  });
+
+  const onRange = debounce((e: MouseEvent) => {
+    console.log(e);
+    // const v = Number(el.offset);
+    //     emit("update:time", v);
+    //     emit("seek", v);
+    //     getPercent();
+  }, 100);
 </script>
 
 <style lang="scss" scoped>
@@ -115,6 +132,39 @@
       display: flex;
       align-items: center;
       gap: 10px;
+    }
+    .play-slider {
+      width: calc(100% - 50px);
+      margin: 0px;
+      padding: 0px;
+      height: 20px;
+      --range-value: 0%;
+      display: inline-flex;
+      flex-direction: column;
+      cursor: pointer;
+      .bar {
+        flex: none;
+        background: linear-gradient(to right, white var(--range-value, 0%), gray var(--range-value, 0%));
+        border-radius: 3px;
+        height: 6px;
+        pointer-events: none;
+      }
+      .circle {
+        flex: none;
+        // appearance: none;
+        border-radius: 50%;
+        height: 20px;
+        width: 20px;
+
+        position: relative;
+        background-color: white;
+
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+        top: -13px;
+
+        left: calc(var(--range-value) - 10px);
+        pointer-events: none;
+      }
     }
     .play-bar-text {
       text-align: right;
