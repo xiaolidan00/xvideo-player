@@ -58,14 +58,14 @@ electron_builder_binaries_mirror=https://npmmirror.com/mirrors/electron-builder-
 `removeLocales.js`
 
 ```js
-import fs from "node:fs";
+import fs from 'node:fs';
 
 export default function (context) {
-  const localeDir = context.appOutDir + "/locales/";
+  const localeDir = context.appOutDir + '/locales/';
   const files = fs.readdirSync(localeDir);
   if (!(files && files.length)) return;
   for (let i = 0, len = files.length; i < len; i++) {
-    if (files[i] !== "zh-CN.pak") fs.unlinkSync(localeDir + files[i]);
+    if (files[i] !== 'zh-CN.pak') fs.unlinkSync(localeDir + files[i]);
   }
 }
 ```
@@ -86,14 +86,15 @@ export default function (context) {
 win: {
   target: [
     {
-      target: "nsis",
-      arch: ["ia32"]
+      target: 'nsis',
+      arch: ['ia32']
     }
   ];
 }
 ```
 
 - electron打包sqlite3报错gyp arch，没有二进制包prebuild，到`https://registry.npmmirror.com/binary.html?path=sqlite3/v6.0.1/`手动下载，放到目录下重名修改`\AppData\Local\npm-cache\_prebuilds\8a4946-sqlite3-v6.0.1-napi-v36-win32-x64.tar.gz`
+- sqlite3安装失败，package.json先删掉sqlite3把其他包安装完，然后手动下载sqlite3二进制包，解压`node_sqlite3.node`二进制文件，放到`node_modules\sqlite3\build`文件夹下
 
 # Video
 
