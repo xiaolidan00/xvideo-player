@@ -77,7 +77,7 @@ function createWindow() {
     if (fs.existsSync(op.data)) {
       try {
         const filePath = op.data;
-        const item = await getVideoItem(filePath);
+
         videoManager.setfilePath(filePath);
         const info = (await getVideoInfo(filePath)) as any;
         const duration = Number(info.format.duration);
@@ -95,8 +95,7 @@ function createWindow() {
           formatType: info.format.format_name,
           width: info.streams[0].width,
           height: info.streams[0].height,
-          frames,
-          currentTime: item.currentTime || 0
+          frames
         };
         await updateVideo({
           filePath,

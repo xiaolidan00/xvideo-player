@@ -1,8 +1,8 @@
 <template>
   <div :class="['video-player', state.isSeg ? 'seg' : '']">
-    <div class="video-canvas" ref="containerRef" @click="togglePlay">
+    <div class="video-canvas" ref="containerRef" @click.self="togglePlay">
       <canvas ref="canvasRef" v-show="path && state.isOk"></canvas>
-      <div v-show="!path || !state.isOk" class="video-empty" @click="openFile">请选择文件</div>
+      <!-- <div v-show="!path || !state.isOk" class="video-empty" @click="openFile">请选择文件</div> -->
     </div>
     <video ref="videoRef1" class="video1" controls />
     <video ref="videoRef2" class="video2" controls />
@@ -20,18 +20,21 @@
 </template>
 
 <script setup lang="ts">
-  import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref} from "vue";
+  import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref, nextTick} from "vue";
   import {ResizeUtil} from "./utils/ResizeUtil";
   import PlayBar from "./PlayBar.vue";
-  import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, waitAction} from "./utils/utils";
-  import {debounce} from "lodash-es";
+  import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, sleep, waitAction} from "./utils/utils";
+  import {debounce, throttle} from "lodash-es";
   const infoCache = new Map();
   const cacheData = new Map<number, Blob>();
   const statusCache = new Map<number, boolean>();
   const urlCache = new Map<number, string>();
-  const props = withDefaults(defineProps<{path: string; autoplay?: boolean; isPic?: boolean; speed?: number}>(), {
-    speed: 1
-  });
+  const props = withDefaults(
+    defineProps<{path: string; autoplay?: boolean; isPic?: boolean; speed?: number; item?: any}>(),
+    {
+      speed: 1
+    }
+  );
   const emit = defineEmits(["update:isPic", "next", "current", "open"]);
   const containerRef = useTemplateRef<HTMLDivElement>("containerRef");
   const canvasRef = useTemplateRef<HTMLCanvasElement>("canvasRef");
@@ -91,7 +94,7 @@
     onDraw();
     state.isPlay = true;
   };
-  const saveCurrent = debounce(() => {
+  const saveCurrent = () => {
     if (props.path) {
       if (infoCache.has(props.path)) {
         const info = infoCache.get(props.path);
@@ -105,7 +108,7 @@
       });
       emit("current", data);
     }
-  }, 1000);
+  };
   const openFile = () => {
     emit("open");
   };
@@ -209,7 +212,6 @@
     const frame = state.frames[state.segIndex];
     if (frame) {
       state.currentTime = frame[0] + videoDOM.value!.currentTime;
-      saveCurrent();
     }
   };
   const waitForVideo = (dom: HTMLVideoElement) => {
@@ -297,6 +299,7 @@
 
   const onInit = async () => {
     if (props.path === "") return;
+
     state.isOk = false;
 
     if (animate) {
@@ -327,11 +330,8 @@
     }
 
     if (res) {
-      console.log(res);
-      state.currentTime = res.currentTime || 0;
-      if (state.currentTime >= state.duration - 3) {
-        state.currentTime = 0;
-      }
+      state.currentTime = props.item?.currentTime || 0;
+
       state.type = res.formatType;
       state.duration = Number(res.duration);
       state.width = res.width;
@@ -343,6 +343,9 @@
       });
 
       onResize();
+      if (state.currentTime >= state.duration - 3) {
+        state.currentTime = 0;
+      }
       if (isSegVideo(state.type)) {
         state.isSeg = true;
         state.isOk = true;
@@ -362,18 +365,23 @@
         videoDOM.value = videoRef1.value!;
         const video = videoDOM.value;
         video.src = "media://video?file=" + props.path;
-        video.onloadeddata = () => {
+        video.playbackRate = props.speed;
+        state.isLock = true;
+        video.onloadeddata = async () => {
           state.isOk = true;
           state.isPlay = true;
+          console.log("duration", video.duration, state.currentTime);
           video.currentTime = state.currentTime;
+          console.log("video.currentTime", video.currentTime);
           video.playbackRate = props.speed;
+          await sleep(1000);
+          state.isLock = false;
           onResize();
           onPlay();
         };
         video.ontimeupdate = () => {
           if (state.isLock) return;
           state.currentTime = video.currentTime;
-          saveCurrent();
         };
         video.onended = () => {
           onPause();

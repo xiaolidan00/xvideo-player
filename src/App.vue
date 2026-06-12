@@ -8,7 +8,7 @@
         <i @click="nextVideo" title="下一集" class="video-tool iconfont icon-next"></i>
 
         <span style="flex: 1"></span>
-        <select v-model="state.speed">
+        <select v-model="state.speed" @change="onAction('speed')">
           <option v-for="item in speedList" :value="item.value">{{ item.label }}</option>
         </select>
         <i
@@ -49,6 +49,7 @@
           :speed="state.speed"
           :path="state.currentVideo"
           v-model:is-pic="state.isPic"
+          :item="state.videoItem"
           ref="playerRef"
           @open="openVideo"
           @next="nextVideo"
@@ -75,7 +76,7 @@
 
 <script setup lang="ts">
   import {debounce} from "lodash-es";
-  import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch} from "vue";
+  import {computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch} from "vue";
   import VideoPlayer from "./VideoPlayer.vue";
   import {waitAction} from "./utils/utils";
   import {formatName, getPercent, speedList, VideoItemType} from "./config";
@@ -91,7 +92,8 @@
     isMenu: localStorage.getItem("menu") === "true",
     isTopWin: localStorage.getItem("topwin") === "true",
     autoplay: localStorage.getItem("autoplay") === "true",
-    currentVideo: ""
+    currentVideo: "",
+    videoItem: null as any
   });
 
   const onAction = async (type: string) => {
@@ -132,6 +134,9 @@
         await waitAction({
           eventName: "clear-video"
         });
+        break;
+      case "speed":
+        localStorage.setItem("speed", state.speed + "");
         break;
     }
   };
@@ -226,6 +231,8 @@
     }
   };
   const onItem = debounce(async (path: string) => {
+    await playerRef.value!.saveCurrent();
+    state.videoItem = videoList.value.find((a) => a.filePath === path);
     if (state.currentVideo !== path) {
       state.currentVideo = path;
       localStorage.setItem("video", state.currentVideo);
