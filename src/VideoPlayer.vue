@@ -20,16 +20,19 @@
 </template>
 
 <script setup lang="ts">
-  import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref, nextTick} from "vue";
+  import {onBeforeUnmount, onMounted, reactive, useTemplateRef, watch, ref} from "vue";
   import {ResizeUtil} from "./utils/ResizeUtil";
   import PlayBar from "./PlayBar.vue";
-  import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, sleep, waitAction} from "./utils/utils";
+  import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, waitAction} from "./utils/utils";
   import {debounce} from "lodash-es";
-
+  const infoCache = new Map();
+  const cacheData = new Map<number, Blob>();
+  const statusCache = new Map<number, boolean>();
+  const urlCache = new Map<number, string>();
   const props = withDefaults(defineProps<{path: string; autoplay?: boolean; isPic?: boolean; speed?: number}>(), {
     speed: 1
   });
-  const emit = defineEmits(["update:isPic", "next", "pause", "open"]);
+  const emit = defineEmits(["update:isPic", "next", "current", "open"]);
   const containerRef = useTemplateRef<HTMLDivElement>("containerRef");
   const canvasRef = useTemplateRef<HTMLCanvasElement>("canvasRef");
   const ctxRef = ref<CanvasRenderingContext2D>();
@@ -50,9 +53,7 @@
     segIndex: 0,
     isLock: false
   });
-  const cacheData = new Map<number, Blob>();
-  const statusCache = new Map<number, boolean>();
-  const urlCache = new Map<number, string>();
+
   const isPicture = ref(props.isPic);
   let interval: any;
   let animate: any;
@@ -90,6 +91,21 @@
     onDraw();
     state.isPlay = true;
   };
+  const saveCurrent = debounce(() => {
+    if (props.path) {
+      if (infoCache.has(props.path)) {
+        const info = infoCache.get(props.path);
+        info.currentTime = state.currentTime;
+        infoCache.set(props.path, info);
+      }
+      const data = {filePath: props.path, currentTime: state.currentTime};
+      waitAction({
+        eventName: "save-video",
+        data
+      });
+      emit("current", data);
+    }
+  }, 1000);
   const openFile = () => {
     emit("open");
   };
@@ -103,17 +119,13 @@
     }
     videoDOM.value!.pause();
     state.isPlay = false;
-    if (infoCache.has(props.path)) {
-      const info = infoCache.get(props.path);
-      info.currentTime = state.currentTime;
-      infoCache.set(props.path, info);
-    }
-    emit("pause");
+
+    saveCurrent();
   };
 
   let locktimeout: any;
   const onSeek = async (time: number) => {
-    emit("pause");
+    saveCurrent();
     state.isLock = true;
     if (locktimeout) {
       clearTimeout(locktimeout);
@@ -197,6 +209,7 @@
     const frame = state.frames[state.segIndex];
     if (frame) {
       state.currentTime = frame[0] + videoDOM.value!.currentTime;
+      saveCurrent();
     }
   };
   const waitForVideo = (dom: HTMLVideoElement) => {
@@ -228,6 +241,7 @@
         statusCache.set(state.segIndex + 1, true);
         getCurrentVideo(state.segIndex + 1);
       }
+      saveCurrent();
     } else {
       if (props.autoplay) {
         emit("next");
@@ -280,7 +294,7 @@
     video.onended = onSegEnd;
     onPlay();
   };
-  const infoCache = new Map();
+
   const onInit = async () => {
     if (props.path === "") return;
     state.isOk = false;
@@ -323,6 +337,10 @@
       state.width = res.width;
       state.height = res.height;
       state.frames = res.frames;
+      emit("current", {
+        filePath: props.path,
+        duration: state.duration
+      });
 
       onResize();
       if (isSegVideo(state.type)) {
@@ -355,6 +373,7 @@
         video.ontimeupdate = () => {
           if (state.isLock) return;
           state.currentTime = video.currentTime;
+          saveCurrent();
         };
         video.onended = () => {
           onPause();
@@ -438,6 +457,7 @@
     onPlay,
     onPause,
     onInit,
-    state
+    state,
+    saveCurrent
   });
 </script>

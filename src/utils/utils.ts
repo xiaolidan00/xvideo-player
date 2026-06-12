@@ -64,7 +64,7 @@ export const waitAction = (sendAction: {eventName: string; data?: any}, receive?
 };
 
 export const isSegVideo = (type: string) => {
-  return type === "mpegts";
+  return type.indexOf("mp4") === -1;
 };
 export const sleep = (time: number) => {
   return new Promise<number>((resolve) => {

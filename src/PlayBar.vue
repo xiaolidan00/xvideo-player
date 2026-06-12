@@ -137,6 +137,8 @@
       width: calc(100% - 50px);
       margin: 0px;
       padding: 0px;
+      position: relative;
+      top: 10px;
       height: 20px;
       --range-value: 0%;
       display: inline-flex;

@@ -26,13 +26,15 @@ export const registerDb = () => {
   db.exec(`CREATE TABLE IF NOT EXISTS ${TABLE} (
     filePath TEXT NOT NULL,
     idx INT NOT NULL,  
-    currentTime REAL 
+    currentTime REAL,
+    duration REAL
   )`);
 };
 
 export type VideoDataType = {
   filePath: string;
   currentTime: number;
+  duration: number;
   idx: number;
 };
 const isEmpty = (v: any) => {
@@ -107,7 +109,7 @@ export const clearVideo = () => {
 };
 export const getVideoList = () => {
   return new Promise<VideoDataType[]>((resolve, reject) => {
-    const query = `SELECT filePath,idx FROM ${TABLE} ORDER BY idx ASC`;
+    const query = `SELECT * FROM ${TABLE} ORDER BY idx ASC`;
     db.all(query, [], (err: any, rows: any[]) => {
       if (err) {
         reject(err);

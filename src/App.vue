@@ -35,6 +35,7 @@
         ></i> -->
 
         <!-- <i class="video-tool" @click="onAction('fix')" title="修复画面与声音不同步" v-if="state.currentVideo">fix</i> -->
+        <span class="video-tool" title="空格-暂停播放，左右箭头-快进后退5s">?</span>
         <i class="video-tool iconfont icon-delete" title="清空文件列表" @click="onAction('clear')"></i>
         <i
           :class="['video-tool iconfont icon-caidan', state.isMenu ? 'active' : '']"
@@ -49,23 +50,23 @@
           :path="state.currentVideo"
           v-model:is-pic="state.isPic"
           ref="playerRef"
-          @pause="onPause"
           @open="openVideo"
           @next="nextVideo"
+          @current="updateCurrent"
         ></VideoPlayer>
       </div>
     </div>
     <div class="video-list" ref="listRef">
-      <div class="video-empty" v-if="state.videoList.length === 0" @click="openVideo">请添加文件</div>
+      <div class="video-empty" v-if="videoList.length === 0" @click="openVideo">请添加文件</div>
       <div
-        v-for="(item, idx) in state.videoList"
+        v-for="(item, idx) in videoList"
         :key="item.filePath"
         :class="['video-item', state.currentVideo === item.filePath ? 'active' : '', 'item-draggable']"
         :title="item.filePath"
       >
         <i class="iconfont icon-list"></i>
         <span @click="onItem(item.filePath)" class="video-item-text"> {{ formatName(item.filePath) }}</span>
-
+        <i class="video-percent" v-if="item.duration">{{ getPercent(item) }}%</i>
         <i class="iconfont icon-delete" @click="onDel(idx)"></i>
       </div>
     </div>
@@ -73,28 +74,25 @@
 </template>
 
 <script setup lang="ts">
-  import {cloneDeep, debounce} from "lodash-es";
+  import {debounce} from "lodash-es";
   import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch} from "vue";
   import VideoPlayer from "./VideoPlayer.vue";
-  import {sleep, waitAction} from "./utils/utils";
-  import {speedList} from "./config";
+  import {waitAction} from "./utils/utils";
+  import {formatName, getPercent, speedList, VideoItemType} from "./config";
   import {Sortable} from "@shopify/draggable";
   const listRef = useTemplateRef<HTMLDivElement>("listRef");
   const playerRef = useTemplateRef<InstanceType<typeof VideoPlayer>>("playerRef");
   let dragSort: Sortable;
+
+  const videoList = ref<VideoItemType[]>([]);
   const state = reactive({
     speed: Number(localStorage.getItem("speed")) || 1,
     isPic: false,
     isMenu: localStorage.getItem("menu") === "true",
     isTopWin: localStorage.getItem("topwin") === "true",
     autoplay: localStorage.getItem("autoplay") === "true",
-    currentVideo: "",
-    videoList: [] as Array<{filePath: string; idx: number}>
+    currentVideo: ""
   });
-
-  const formatName = (str: string) => {
-    return str.substring(str.lastIndexOf("\\") + 1);
-  };
 
   const onAction = async (type: string) => {
     switch (type) {
@@ -129,7 +127,7 @@
         localStorage.setItem("autoplay", state.autoplay + "");
         break;
       case "clear":
-        state.videoList = [];
+        videoList.value = [];
         state.currentVideo = "";
         await waitAction({
           eventName: "clear-video"
@@ -156,18 +154,21 @@
     children.forEach((a, i) => {
       obj[a.title] = i;
     });
-    state.videoList.forEach((item) => {
+    videoList.value.forEach((item) => {
       item.idx = Number(obj[item.filePath]);
     });
-    state.videoList.sort((a, b) => a.idx - b.idx);
+    videoList.value.sort((a, b) => a.idx - b.idx);
 
-    window.ipcRenderer.send("save-all-video", cloneDeep(state.videoList));
+    window.ipcRenderer.send(
+      "save-all-video",
+      videoList.value.map((a) => ({filePath: a.filePath, idx: a.idx}))
+    );
   }, 1000);
   const onDragList = () => {
     if (dragSort) {
       dragSort.destroy();
     }
-    if (state.videoList.length) {
+    if (videoList.value.length) {
       dragSort = new Sortable(listRef.value!, {
         draggable: ".item-draggable",
         handle: ".icon-list",
@@ -182,17 +183,20 @@
   };
   const addVideo = async (files: any[]) => {
     const obj: Record<string, number> = {};
-    const addList = [];
-    state.videoList.forEach((f) => {
+    const addList: any[] = [];
+    videoList.value.forEach((f) => {
       obj[f.filePath] = 1;
     });
-    const len = state.videoList.length;
+    const len = videoList.value.length;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!obj[file.path]) {
         addList.push({
           filePath: file.path,
-          idx: addList.length + len
+
+          idx: addList.length + len,
+          currentTime: 0,
+          duration: 0
         });
         obj[file.path] = 2;
       }
@@ -205,25 +209,24 @@
         },
         true
       );
-      state.videoList.push(...addList);
-      state.videoList.sort((a, b) => a.idx - b.idx);
+      videoList.value.push(...addList);
+      videoList.value.sort((a, b) => a.idx - b.idx);
       if (state.currentVideo === "") {
-        onItem(state.videoList[0].filePath);
+        onItem(videoList.value[0].filePath);
       }
     }
     onDragList();
   };
-  const onPause = async () => {
-    if (state.currentVideo && playerRef.value) {
-      await waitAction({
-        eventName: "save-video",
-        data: {filePath: state.currentVideo, currentTime: playerRef.value!.state.currentTime}
-      });
+  const updateCurrent = (data: {filePath: string; currentTime?: number; duration?: number}) => {
+    console.log("updateCurrent", data);
+    const idx = videoList.value.findIndex((a) => a.filePath === data.filePath);
+    if (idx >= 0) {
+      if (data.currentTime !== undefined) videoList.value[idx].currentTime = data.currentTime;
+      if (data.duration !== undefined) videoList.value[idx].duration = data.duration;
     }
   };
   const onItem = debounce(async (path: string) => {
     if (state.currentVideo !== path) {
-      onPause();
       state.currentVideo = path;
       localStorage.setItem("video", state.currentVideo);
     }
@@ -231,9 +234,9 @@
     playerRef.value!.onInit();
   }, 100);
   const onDel = debounce(async (idx: number) => {
-    const f = state.videoList[idx];
+    const f = videoList.value[idx];
 
-    state.videoList.splice(idx, 1);
+    videoList.value.splice(idx, 1);
     await waitAction({
       eventName: "del-video",
       data: f.filePath
@@ -247,17 +250,17 @@
 
   const nextVideo = debounce(() => {
     if (state.currentVideo) {
-      const index = state.videoList.findIndex((a) => a.filePath === state.currentVideo);
-      if (index >= 0 && index + 1 < state.videoList.length) {
-        onItem(state.videoList[index + 1]!.filePath);
+      const index = videoList.value.findIndex((a) => a.filePath === state.currentVideo);
+      if (index >= 0 && index + 1 < videoList.value.length) {
+        onItem(videoList.value[index + 1]!.filePath);
       }
     }
   }, 100);
   const preVideo = debounce(() => {
     if (state.currentVideo) {
-      const index = state.videoList.findIndex((a) => a.filePath === state.currentVideo);
+      const index = videoList.value.findIndex((a) => a.filePath === state.currentVideo);
       if (index >= 0 && index - 1 >= 0) {
-        onItem(state.videoList[index - 1]!.filePath);
+        onItem(videoList.value[index - 1]!.filePath);
       }
     }
   }, 100);
@@ -304,14 +307,14 @@
     console.log("main-process-console", data);
   };
   const onVideoList = async (_event: any, data: any) => {
-    console.log("video-list", data);
-    state.videoList = data;
-    const p = localStorage.getItem("video");
-    if (p) {
-      const item = state.videoList.find((a) => a.filePath === p);
-      if (item) state.currentVideo = p;
-    } else {
-      state.currentVideo = "";
+    videoList.value = data;
+    console.log("video-list", videoList.value);
+    if (state.currentVideo === "") {
+      const p = localStorage.getItem("video");
+      if (p) {
+        const item = videoList.value.find((a) => a.filePath === p);
+        if (item) state.currentVideo = p;
+      }
     }
     await nextTick();
     onDragList();
@@ -319,6 +322,7 @@
 
   window.ipcRenderer.on("video-list", onVideoList);
   window.ipcRenderer.on("main-process-console", onMsg);
+
   onBeforeUnmount(() => {
     if (dragSort) {
       dragSort.destroy();

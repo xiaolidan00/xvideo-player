@@ -61,7 +61,7 @@ function createWindow() {
   // Test active push message to Renderer-process.
   win.webContents.on("did-finish-load", async () => {
     win?.webContents.send("main-process-message", new Date().toLocaleString());
-    await sleep(1000);
+
     sendVideoList();
   });
 
@@ -98,6 +98,10 @@ function createWindow() {
           frames,
           currentTime: item.currentTime || 0
         };
+        await updateVideo({
+          filePath,
+          duration
+        });
         videoManager.setInfo(data);
 
         win?.webContents.send(op.cb, {...data});
@@ -141,7 +145,17 @@ function createWindow() {
   }
 }
 
-app.on("before-quit", () => {
+app.on("before-quit", async () => {
+  // const data = await waitAction(
+  //   {
+  //     eventName: "save-current"
+  //   },
+  //   true
+  // );
+  // if (data) {
+  //   await updateVideo(data);
+  // }
+
   closeDB();
   killProcess();
 });
@@ -169,6 +183,25 @@ app.whenReady().then(async () => {
   createWindow();
 });
 
+export const waitAction = (sendAction: {eventName: string; data?: any}, receive?: boolean) => {
+  return new Promise<any>((resolve) => {
+    if (receive) {
+      const cbId = "action" + new Date().getTime();
+
+      ipcMain.once(cbId, (_event: any, data: any) => {
+        resolve(data);
+      });
+      win?.webContents.send(sendAction.eventName, {
+        cb: cbId,
+        data: sendAction.data
+      });
+    } else {
+      win?.webContents.send(sendAction.eventName, sendAction.data);
+    }
+
+    if (!receive) resolve("");
+  });
+};
 export function mainConsole(data: any) {
   // console.log("mainConsole", ...args);
   win?.webContents.send("main-process-console", data);

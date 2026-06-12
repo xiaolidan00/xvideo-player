@@ -32,7 +32,7 @@ export const killProcess = () => {
   streamCache.clear();
 };
 export const isSegVideo = (type: string) => {
-  return type === "mpegts";
+  return type.indexOf("mp4") === -1;
 };
 class VideoManager {
   filePath: string = "";
@@ -161,22 +161,29 @@ const getVideoStream = async (req: Request, resolve: Function, reject: Function)
 const runCMDStr = (cmd: string, args: string[]) => {
   return new Promise<string>((resolve, reject) => {
     const proc = spawn(cmd as string, args, {stdio: ["pipe", "pipe", "pipe"]});
+    processMap.set(proc, proc);
+    const onKill = () => {
+      //@ts-ignore
+      if (proc && !proc.killed) {
+        proc.kill();
+        processMap.delete(proc);
+      }
+    };
+
     let chunks = "";
     proc.stdout.on("data", (d) => {
       chunks += d;
     });
     proc.stdout.on("end", () => {
-      proc.kill();
-      processMap.delete(proc);
+      onKill();
       resolve(chunks);
     });
 
     proc.on("error", (err) => {
-      proc.kill();
-      processMap.delete(proc);
+      onKill();
       reject(err);
     });
-    processMap.set(proc, proc);
+
     // proc.stderr.on("data", () => {});
   });
 };
@@ -192,7 +199,7 @@ const corsHeaders = {
 //   const filePath = videoManager.filePath;
 //   if (filePath)
 //     exec(
-//       `${ffmpegPath} -i ${filePath}  -vf "setpts=PTS-STARTPTS"  -af "asetpts=PTS-STARTPTS"  -c:v libx264 -c:a aac -f mp4 ${filePath.substring(0, filePath.lastIndexOf("."))}.mp4`
+//       `${ffmpegPath} -i ${filePath}  -vf "setpts=PTS-STARTPTS"  -af "asetpts=PTS-STARTPTS"  -c:v libx264 -c:a aac -f mp4 ${filePath.substring(0, filePath.lastIndexOf("."))}~.mp4`
 //     );
 // };
 export const getVideoInfo = async (filePath: string) => {
@@ -210,7 +217,7 @@ export const getVideoInfo = async (filePath: string) => {
     const data = await runCMDStr(ffprobePath, args);
 
     const info = JSON.parse(data);
-
+    console.log(info.format.format_name);
     mainConsole(info);
     // console.log(info.format, info.streams[0]);
     // videoManager.setfilePath(filePath);
