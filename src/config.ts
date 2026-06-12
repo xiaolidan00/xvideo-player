@@ -1,3 +1,5 @@
+import {ref} from "vue";
+
 export const speedList = [
   {label: "x1", value: 1.0},
   {label: "x1.25", value: 1.25},
@@ -21,3 +23,5 @@ export const getPercent = (item: VideoItemType) => {
 export const formatName = (str: string) => {
   return str.substring(str.lastIndexOf("\\") + 1) || "";
 };
+
+export const loading = ref(false);

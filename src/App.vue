@@ -57,7 +57,7 @@
         ></VideoPlayer>
       </div>
     </div>
-    <div class="video-list" ref="listRef">
+    <div :class="['video-list', loading ? 'loading' : '']" ref="listRef">
       <div class="video-empty" v-if="videoList.length === 0" @click="openVideo">请添加文件</div>
       <div
         v-for="(item, idx) in videoList"
@@ -76,10 +76,10 @@
 
 <script setup lang="ts">
   import {debounce} from "lodash-es";
-  import {computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch} from "vue";
+  import {nextTick, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch} from "vue";
   import VideoPlayer from "./VideoPlayer.vue";
   import {waitAction} from "./utils/utils";
-  import {formatName, getPercent, speedList, VideoItemType} from "./config";
+  import {formatName, getPercent, loading, speedList, VideoItemType} from "./config";
   import {Sortable} from "@shopify/draggable";
   const listRef = useTemplateRef<HTMLDivElement>("listRef");
   const playerRef = useTemplateRef<InstanceType<typeof VideoPlayer>>("playerRef");

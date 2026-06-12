@@ -57,6 +57,12 @@ body {
     height: 100%;
     overflow: auto;
     scrollbar-width: none;
+    &.loading {
+      cursor: wait;
+      > div {
+        pointer-events: none;
+      }
+    }
   }
 
   .video-player {

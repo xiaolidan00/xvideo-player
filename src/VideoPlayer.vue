@@ -25,6 +25,7 @@
   import PlayBar from "./PlayBar.vue";
   import {convertBase64UrlToFile, downloadFile, getBlob, isSegVideo, sleep, waitAction} from "./utils/utils";
   import {debounce, throttle} from "lodash-es";
+  import {loading} from "./config";
   const infoCache = new Map();
   const cacheData = new Map<number, Blob>();
   const statusCache = new Map<number, boolean>();
@@ -299,7 +300,8 @@
 
   const onInit = async () => {
     if (props.path === "") return;
-
+    loading.value = true;
+    state.isLock = true;
     state.isOk = false;
 
     if (animate) {
@@ -311,6 +313,9 @@
       URL.revokeObjectURL(url);
     });
     urlCache.clear();
+    videoRef1.value!.src = "";
+    videoRef2.value!.src = "";
+    videoDOM.value = undefined;
     resetVideo();
 
     let res;
@@ -326,23 +331,23 @@
       );
       if (res) {
         infoCache.set(props.path, res);
+        emit("current", {
+          filePath: props.path,
+          duration: res.duration
+        });
       }
     }
 
     if (res) {
-      state.currentTime = props.item?.currentTime || 0;
-
+      console.log(res);
       state.type = res.formatType;
-      state.duration = Number(res.duration);
+      state.duration = res.duration;
       state.width = res.width;
       state.height = res.height;
       state.frames = res.frames;
-      emit("current", {
-        filePath: props.path,
-        duration: state.duration
-      });
 
       onResize();
+      state.currentTime = props.item?.currentTime || 0;
       if (state.currentTime >= state.duration - 3) {
         state.currentTime = 0;
       }
@@ -366,18 +371,18 @@
         const video = videoDOM.value;
         video.src = "media://video?file=" + props.path;
         video.playbackRate = props.speed;
-        state.isLock = true;
+
         video.onloadeddata = async () => {
           state.isOk = true;
           state.isPlay = true;
+          loading.value = false;
           console.log("duration", video.duration, state.currentTime);
           video.currentTime = state.currentTime;
           console.log("video.currentTime", video.currentTime);
           video.playbackRate = props.speed;
-          await sleep(1000);
-          state.isLock = false;
           onResize();
           onPlay();
+          state.isLock = false;
         };
         video.ontimeupdate = () => {
           if (state.isLock) return;
@@ -390,6 +395,8 @@
     } else {
       alert("视频文件读取失败！");
     }
+    await sleep(1000);
+    loading.value = false;
   };
 
   watch(
