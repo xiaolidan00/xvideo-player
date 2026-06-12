@@ -40,7 +40,7 @@
         <i
           :class="['video-tool iconfont icon-caidan', state.isMenu ? 'active' : '']"
           @click="onAction('menu')"
-          title="展开菜单"
+          title="展开/收起菜单"
         ></i>
       </div>
       <div class="video-player-wrap">
